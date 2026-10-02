@@ -491,8 +491,8 @@
 
   const REVIEW_MS = 500; // Stockfish per position in review (built-in fallback: 900 ms)
   const LEVELS = AI.LEVELS.concat([
-    // Stockfish's own Elo limiter, checked against native Stockfish (see README).
-    { elo: 2400, engine: 'stockfish', uciElo: 2400, movetime: 500, fallback: { maxDepth: 64, timeMs: 1500 } },
+    // Stockfish Lite's Elo limiter reads about 140 low, so 2540 here plays at 2400 (measured; see README).
+    { elo: 2400, engine: 'stockfish', uciElo: 2540, movetime: 500, fallback: { maxDepth: 64, timeMs: 1500 } },
   ]);
 
   async function botMove(level, moves) {

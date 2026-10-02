@@ -31,7 +31,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
 
 ## Bot ratings
 
-Each level is a search depth limit, plus random noise added to move scores at the weaker levels. Each level was measured by playing matches against Stockfish 16 with `UCI_LimitStrength`. The games start from 12 balanced openings, and each opening is played with both colors. The ratings are on Stockfish's Elo scale, which is calibrated against computer engines. They are rough guides to human ratings, not exact equivalents.
+Levels 1000–2200 are the built-in engine with a search depth limit, plus random noise added to move scores at the weaker levels. The 2400 level is Stockfish with its strength limiter. Each level was measured by playing matches against Stockfish 16 with `UCI_LimitStrength`. The games start from 12 balanced openings, and each opening is played with both colors. The ratings are on Stockfish's Elo scale, which is calibrated against computer engines. They are rough guides to human ratings, not exact equivalents.
 
 | Level | Setting | Measured rating | Games |
 |---|---|---|---|
@@ -42,6 +42,7 @@ Each level is a search depth limit, plus random noise added to move scores at th
 | 1800 | depth 4 | ≈ 1825 | 40 vs SF 1800 |
 | 2000 | depth 5 | ≈ 2070 | 44 vs SF 2000 |
 | 2200 | depth 6 | ≈ 2210 | 44 vs SF 2200 |
-| Review engine | 0.7 s per position, no depth limit | ≈ 2400 at 1.5 s per move | 24 vs SF 2200 and 2500 |
+| 2400 | Stockfish 19 Lite, `UCI_Elo` 2540, 0.5 s per move | ≈ 2410 | 40 vs SF 2400 |
+| Review engine | Stockfish 19 Lite, full strength, 0.5 s per position | ≈ 3400 (26 wins, 3 draws, 1 loss) | 30 vs SF 3000 at 1 s per move |
 
-Each figure is accurate to about ±70–100 Elo. Stockfish's `UCI_Elo` cannot go below 1320, so the 1000 and 1200 levels are extrapolated from their score against that floor. Stockfish played at 150 ms per move.
+Each figure is accurate to about ±70–100 Elo. Stockfish's `UCI_Elo` cannot go below 1320, so the 1000 and 1200 levels are extrapolated from their score against that floor. Native Stockfish played at 150 ms per move, except against the review engine, where it had 1 s per move so its 3000 setting could reach full depth. Stockfish Lite's own `UCI_Elo` reads low: set to 2400 it measured ≈ 2310, so the 2400 level uses 2540.
