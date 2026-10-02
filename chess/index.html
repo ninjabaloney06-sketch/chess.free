@@ -44,7 +44,7 @@
     margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 10px; min-height: 46px;
   }
   .swatch { width: 16px; height: 16px; border-radius: 50%; flex: none; border: 2px solid rgba(0,0,0,.2); }
-  .swatch.w { background: #4a8fe7; } .swatch.b { background: #ff8fc8; }
+  .swatch.w { background: #f4f1ea; } .swatch.b { background: #262626; }
   .board {
     display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); aspect-ratio: 1; width: 100%;
     border-radius: 10px; overflow: hidden; box-shadow: 0 8px 30px rgba(80, 40, 120, 0.25); touch-action: none; user-select: none;
@@ -93,7 +93,7 @@
 <div class="app">
   <div class="board-wrap">
     <h1>🦄 Unicorn Chess 🗼</h1>
-    <p class="sub">Blue vs Pink. Unicorns replace knights and Eiffel Towers replace rooks. Their moves stay the same.</p>
+    <p class="sub">White vs Black. Unicorns replace knights and Eiffel Towers replace rooks. Their moves stay the same.</p>
     <div class="status" id="status"></div>
     <div class="board" id="board" aria-label="Chess board"></div>
   </div>
@@ -105,8 +105,8 @@
         <label for="mode">Opponent</label>
         <select id="mode">
           <option value="human">Two players</option>
-          <option value="ai-b">Computer plays Pink</option>
-          <option value="ai-w">Computer plays Blue</option>
+          <option value="ai-b">Computer plays Black</option>
+          <option value="ai-w">Computer plays White</option>
         </select>
       </div>
       <div class="row" style="margin-bottom:10px">
@@ -125,9 +125,9 @@
     </div>
 
     <div class="card">
-      <h2>Captured by Blue</h2>
+      <h2>Captured by White</h2>
       <div class="captured" id="capW"></div>
-      <h2 style="margin-top:10px">Captured by Pink</h2>
+      <h2 style="margin-top:10px">Captured by Black</h2>
       <div class="captured" id="capB"></div>
     </div>
 
@@ -166,8 +166,8 @@
   const E = window.ChessEngine;
 
   const PALETTE = {
-    w: { fill: '#4a8fe7', light: '#a9cdff', stroke: '#173a73', name: 'Blue' },
-    b: { fill: '#ff8fc8', light: '#ffd3ea', stroke: '#8c2160', name: 'Pink' },
+    w: { fill: '#f4f1ea', light: '#b8b2a6', stroke: '#2a2a2a', name: 'White' },
+    b: { fill: '#262626', light: '#8c8c8c', stroke: '#000000', name: 'Black' },
   };
   const PIECE_NAMES = { p: 'Pawn', n: 'Unicorn', b: 'Bishop', r: 'Eiffel Tower', q: 'Queen', k: 'King' };
 
@@ -434,7 +434,7 @@
   }
 
   function showEnd(st) {
-    document.getElementById('endEmoji').textContent = st.result === 'checkmate' ? (st.winner === 'w' ? '💙🏆' : '💖🏆') : '🤝';
+    document.getElementById('endEmoji').textContent = st.result === 'checkmate' ? (st.winner === 'w' ? '🤍🏆' : '🖤🏆') : '🤝';
     document.getElementById('endTitle').textContent = st.result === 'checkmate' ? `${PALETTE[st.winner].name} wins!` : 'Draw';
     document.getElementById('endText').textContent = st.result === 'checkmate' ? 'Checkmate.' : `By ${drawReason(st.result)}.`;
     document.getElementById('endModal').classList.add('open');

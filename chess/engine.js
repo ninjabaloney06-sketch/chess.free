@@ -1,5 +1,5 @@
 // Chess rules engine. Board squares are indexed 0..63, row 0 = rank 8, col 0 = file a.
-// Colors: 'w' = Blue (moves first), 'b' = Pink.
+// Colors: 'w' = White (moves first), 'b' = Black.
 (function (root) {
   'use strict';
 
