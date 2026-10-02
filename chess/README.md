@@ -29,7 +29,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
 
 ## Bot ratings
 
-Each level is a search depth or time limit, plus random noise added to move scores at the weaker levels. Each level was measured by playing matches against Stockfish 16 with `UCI_LimitStrength`. The games start from 12 balanced openings, and each opening is played with both colors. The ratings are on Stockfish's Elo scale, which is calibrated against computer engines. They are rough guides to human ratings, not exact equivalents.
+Each level is a search depth limit, plus random noise added to move scores at the weaker levels. Each level was measured by playing matches against Stockfish 16 with `UCI_LimitStrength`. The games start from 12 balanced openings, and each opening is played with both colors. The ratings are on Stockfish's Elo scale, which is calibrated against computer engines. They are rough guides to human ratings, not exact equivalents.
 
 | Level | Setting | Measured rating | Games |
 |---|---|---|---|
