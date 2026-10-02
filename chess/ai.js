@@ -621,13 +621,13 @@
 
   // Playing strength presets, calibrated against Stockfish's UCI_Elo (see chess/calibrate.js).
   const LEVELS = [
-    { elo: 1000, maxDepth: 1, noise: 300, timeMs: 1000 },
-    { elo: 1200, maxDepth: 2, noise: 200, timeMs: 1000 },
-    { elo: 1400, maxDepth: 3, noise: 120, timeMs: 1000 },
-    { elo: 1600, maxDepth: 4, noise: 70, timeMs: 1000 },
-    { elo: 1800, maxDepth: 5, noise: 35, timeMs: 1000 },
-    { elo: 2000, maxDepth: 6, noise: 0, timeMs: 1000 },
-    { elo: 2200, maxDepth: 64, noise: 0, timeMs: 1500 },
+    { elo: 1000, maxDepth: 1, noise: 0, timeMs: 5000 },
+    { elo: 1200, maxDepth: 2, noise: 165, timeMs: 5000 },
+    { elo: 1400, maxDepth: 3, noise: 75, timeMs: 5000 },
+    { elo: 1600, maxDepth: 3, noise: 0, timeMs: 5000 },
+    { elo: 1800, maxDepth: 4, noise: 0, timeMs: 5000 },
+    { elo: 2000, maxDepth: 5, noise: 0, timeMs: 5000 },
+    { elo: 2200, maxDepth: 6, noise: 0, timeMs: 5000 },
   ];
   const MATE_SCORE = MATE;
 
