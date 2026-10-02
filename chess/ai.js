@@ -621,7 +621,7 @@
 
   // Playing strength presets, calibrated against Stockfish's UCI_Elo (see chess/calibrate.js).
   const LEVELS = [
-    { elo: 1000, maxDepth: 1, noise: 80, timeMs: 5000 },
+    { elo: 1000, maxDepth: 1, noise: 90, timeMs: 5000 },
     { elo: 1200, maxDepth: 2, noise: 150, timeMs: 5000 },
     { elo: 1400, maxDepth: 3, noise: 75, timeMs: 5000 },
     { elo: 1600, maxDepth: 3, noise: 15, timeMs: 5000 },
