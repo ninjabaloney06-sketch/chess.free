@@ -30,3 +30,16 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
 ## Bot ratings
 
 Each level is a search depth or time limit, plus random noise added to move scores at the weaker levels. Each level was measured by playing matches against Stockfish 16 with `UCI_LimitStrength`. The games start from 12 balanced openings, and each opening is played with both colors. The ratings are on Stockfish's Elo scale, which is calibrated against computer engines. They are rough guides to human ratings, not exact equivalents.
+
+| Level | Setting | Measured rating | Games |
+|---|---|---|---|
+| 1000 | depth 1, noise 90 | ≈ 1000 (pooled over noise 80–100) | 120 vs SF 1320 |
+| 1200 | depth 2, noise 150 | ≈ 1250 (≈ 1165 at noise 165) | 32 + 24 vs SF 1320 |
+| 1400 | depth 3, noise 75 | ≈ 1410 | 24 vs SF 1500, 24 vs SF 1400 |
+| 1600 | depth 3, noise 15 | ≈ 1565 | 40 vs SF 1600 |
+| 1800 | depth 4 | ≈ 1825 | 40 vs SF 1800 |
+| 2000 | depth 5 | ≈ 2070 | 44 vs SF 2000 |
+| 2200 | depth 6 | ≈ 2210 | 44 vs SF 2200 |
+| Review engine | 0.7 s per position, no depth limit | ≈ 2400 at 1.5 s per move | 24 vs SF 2200 and 2500 |
+
+Each figure is accurate to about ±70–100 Elo. Stockfish's `UCI_Elo` cannot go below 1320, so the 1000 and 1200 levels are extrapolated from their score against that floor. Stockfish played at 150 ms per move.
