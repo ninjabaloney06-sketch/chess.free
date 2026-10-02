@@ -624,7 +624,7 @@
     { elo: 1000, maxDepth: 1, noise: 80, timeMs: 5000 },
     { elo: 1200, maxDepth: 2, noise: 150, timeMs: 5000 },
     { elo: 1400, maxDepth: 3, noise: 75, timeMs: 5000 },
-    { elo: 1600, maxDepth: 3, noise: 0, timeMs: 5000 },
+    { elo: 1600, maxDepth: 3, noise: 15, timeMs: 5000 },
     { elo: 1800, maxDepth: 4, noise: 0, timeMs: 5000 },
     { elo: 2000, maxDepth: 5, noise: 0, timeMs: 5000 },
     { elo: 2200, maxDepth: 6, noise: 0, timeMs: 5000 },
