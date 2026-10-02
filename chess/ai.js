@@ -3,7 +3,8 @@
 // iterative deepening PVS with null-move pruning, late-move reductions and quiescence,
 // evaluated with PeSTO's tapered piece-square tables.
 // Runs in a Web Worker (message API) or directly (window.ChessAI / module.exports).
-(function (root) {
+// The page can also start a worker from this function's source text (works from file://).
+function chessAIModule(root) {
   'use strict';
 
   const P = 1, N = 2, B = 3, R = 4, Q = 5, K = 6;
@@ -645,5 +646,9 @@
       try { result = think(opts); } catch (err) { result = { error: String(err) }; }
       root.postMessage({ id, result });
     };
-  } else root.ChessAI = api;
-})(typeof self !== 'undefined' ? self : globalThis);
+  } else {
+    root.ChessAI = api;
+    root.chessAIModule = chessAIModule;
+  }
+}
+chessAIModule(typeof self !== 'undefined' ? self : globalThis);

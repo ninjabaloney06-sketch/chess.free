@@ -103,6 +103,11 @@
   .review-on .mv { cursor: pointer; }
   .mv.cur { background: var(--select); }
   .mv svg { width: 16px; height: 16px; flex: none; }
+  .var { grid-column: 1 / -1; margin: 2px 0 4px 18px; padding: 4px 6px; border-left: 3px solid var(--accent); background: var(--panel-2);
+    border-radius: 0 6px 6px 0; font-size: .85rem; line-height: 1.7; }
+  .var .vn { color: var(--muted); margin-left: 2px; }
+  .vdel { padding: 0 6px; margin-left: 4px; font-size: .8rem; line-height: 1.4; background: transparent; }
+  .tag { display: inline-block; font-size: .7rem; padding: 1px 6px; border-radius: 4px; background: var(--accent); color: #fff; vertical-align: 1px; }
   .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: none; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
   .modal.open { display: flex; }
   .modal .box { background: var(--panel); border-radius: 14px; padding: 18px; text-align: center; max-width: 380px; width: 100%; }
@@ -146,7 +151,7 @@
 <div class="app" id="app">
   <div class="main">
     <h1>Stone Chess</h1>
-    <p class="sub">Play a friend or a computer opponent rated 1000 to 2200, then review your game move by move.</p>
+    <p class="sub">Play a friend or a computer opponent rated 1000 to 2400, then review your game with Stockfish. Everything runs on your device.</p>
     <div class="status" id="status"></div>
     <div class="board-row">
       <div class="evalbar" id="evalbar"><div class="fill" id="evalfill"></div><span class="num" id="evalnum"></span></div>
@@ -158,6 +163,7 @@
     <div class="card review-card">
       <h2>Game review</h2>
       <div id="reviewProgressText" style="font-size:.85rem;color:var(--muted)"></div>
+      <div id="engineLabel" style="font-size:.78rem;color:var(--muted);margin-top:2px"></div>
       <div class="progress"><div id="reviewProgress"></div></div>
       <div class="acc">
         <div><b id="accW">–</b><span>White accuracy</span></div>
@@ -241,8 +247,7 @@
   const AI = window.ChessAI;
   const NAMES = { w: 'White', b: 'Black' };
   const other = (c) => (c === 'w' ? 'b' : 'w');
-  const LEVEL_NAMES = { 1000: 'Beginner', 1200: 'Novice', 1400: 'Casual', 1600: 'Intermediate', 1800: 'Club player', 2000: 'Advanced', 2200: 'Expert' };
-  const REVIEW_MS = 700; // per position, at full strength
+  const LEVEL_NAMES = { 1000: 'Beginner', 1200: 'Novice', 1400: 'Casual', 1600: 'Intermediate', 1800: 'Club player', 2000: 'Advanced', 2200: 'Expert', 2400: 'Master' };
 
   // ---- Stone textures (procedural SVG noise) ----
   function stone(base, ink, big, fine, seed, freq) {
@@ -355,44 +360,168 @@
   ].map((s) => s.split(' '));
   const isBook = (moves, i) => BOOK.some((line) => line.length > i && moves.slice(0, i + 1).every((u, k) => line[k] === u));
 
-  // ---- Engine access: Web Worker when available, main thread otherwise ----
-  let worker = null, workerOk = true, seq = 0, gen = 0;
-  const pending = new Map();
-  function makeWorker() {
-    if (!workerOk) return null;
-    try {
-      const w = new Worker('ai.js');
-      w.onmessage = (e) => { const p = pending.get(e.data.id); pending.delete(e.data.id); if (p) p.resolve(e.data.result); };
-      w.onerror = (ev) => {
+  // ---- Engines ----
+  // Everything runs locally. The built-in engine (ai.js) and Stockfish both run in Web Workers
+  // created from in-page sources, so they also work when index.html is opened from disk.
+  const MATE = AI.MATE;
+  const loadScript = (src) => new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+
+  class BuiltinEngine {
+    constructor() { this.seq = 0; this.pending = new Map(); this.broken = false; this.start(); }
+    start() {
+      this.w = null;
+      if (this.broken) return;
+      try {
+        const src = `(${window.chessAIModule.toString()})(self);`;
+        this.w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      } catch (e) { this.broken = true; return; }
+      this.w.onmessage = (e) => { const p = this.pending.get(e.data.id); this.pending.delete(e.data.id); if (p) p.resolve(e.data.result); };
+      this.w.onerror = (ev) => {
         if (ev.preventDefault) ev.preventDefault();
-        workerOk = false; w.terminate(); if (worker === w) worker = null;
-        const waiting = [...pending.values()]; pending.clear();
-        waiting.forEach((p) => runLocal(p.opts, p.myGen).then(p.resolve));
+        this.broken = true; this.w.terminate(); this.w = null;
+        const waiting = [...this.pending.values()]; this.pending.clear();
+        waiting.forEach((p) => this.local(p.opts).then(p.resolve));
       };
-      return w;
-    } catch (e) { workerOk = false; return null; }
+    }
+    local(opts) { return new Promise((res) => setTimeout(() => res(AI.think(opts)), 20)); }
+    think(opts) {
+      if (!this.w) return this.local(opts);
+      return new Promise((resolve) => { const id = ++this.seq; this.pending.set(id, { resolve, opts }); this.w.postMessage({ id, opts }); });
+    }
+    cancel() {
+      if (this.w) this.w.terminate();
+      const waiting = [...this.pending.values()]; this.pending.clear();
+      waiting.forEach((p) => p.resolve(null));
+      this.start();
+    }
   }
-  function runLocal(opts, myGen) {
-    return new Promise((res) => setTimeout(() => res(myGen === gen ? AI.think(opts) : null), 20));
+
+  class StockfishEngine {
+    constructor() { this.queue = []; this.job = null; this.ready = null; this.name = 'Stockfish 19 Lite'; }
+    load() {
+      if (!this.ready) {
+        const http = location.protocol.startsWith('http');
+        this.ready = (http ? this.boot('direct').catch(() => this.boot('bundle')) : this.boot('bundle')).then(() => true, () => false);
+      }
+      return this.ready;
+    }
+    async boot(kind) {
+      if (this.w) this.w.terminate();
+      let w;
+      if (kind === 'direct') w = new Worker('stockfish/stockfish-19-lite-single.js');
+      else {
+        if (!window.STOCKFISH_BUNDLE) await loadScript('stockfish/stockfish-bundle.js');
+        const b = window.STOCKFISH_BUNDLE;
+        // Hand the worker its WASM from memory: from file:// it may not fetch anything.
+        const shim = 'var __sfWasm=Uint8Array.from(atob("' + b.wasm + '"),function(c){return c.charCodeAt(0)});' +
+          'var __sfFetch=self.fetch;self.fetch=function(u,o){return /\\.wasm/.test(String(u))?' +
+          'Promise.resolve(new Response(__sfWasm,{headers:{"Content-Type":"application/wasm"}})):__sfFetch(u,o)};\n';
+        w = new Worker(URL.createObjectURL(new Blob([shim + b.js], { type: 'text/javascript' })) + '#stockfish.wasm');
+      }
+      this.w = w;
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Stockfish did not start')), 20000);
+        w.onerror = (e) => { if (e.preventDefault) e.preventDefault(); clearTimeout(timer); reject(e); };
+        w.onmessage = (e) => {
+          if (String(e.data) !== 'uciok') return;
+          clearTimeout(timer);
+          w.onmessage = (ev) => this.onLine(String(ev.data));
+          this.send('setoption name Hash value 32');
+          resolve();
+        };
+        w.postMessage('uci');
+      });
+    }
+    send(s) { this.w.postMessage(s); }
+    request(job, urgent) {
+      return new Promise((resolve) => {
+        job.resolve = resolve;
+        if (urgent) this.queue.unshift(job); else this.queue.push(job);
+        this.next();
+      });
+    }
+    next() {
+      if (this.job || !this.queue.length) return;
+      const j = this.job = this.queue.shift();
+      j.lines = {};
+      this.send(`setoption name UCI_LimitStrength value ${j.elo ? 'true' : 'false'}`);
+      if (j.elo) this.send(`setoption name UCI_Elo value ${j.elo}`);
+      this.send(`setoption name MultiPV value ${j.multipv || 1}`);
+      this.send('position startpos' + (j.moves.length ? ' moves ' + j.moves.join(' ') : ''));
+      this.send(`go movetime ${j.movetime}`);
+    }
+    onLine(line) {
+      const j = this.job;
+      if (!j) return;
+      if (line.startsWith('info') && line.includes(' pv ') && !/ (lower|upper)bound /.test(line)) {
+        const f = line.split(' ');
+        const at = (k) => f[f.indexOf(k) + 1];
+        const mpv = f.includes('multipv') ? +at('multipv') : 1;
+        let score = 0;
+        if (f.includes('mate')) { const n = +at('mate'); score = n > 0 ? MATE - (2 * n - 1) : -(MATE - 2 * -n); }
+        else if (f.includes('cp')) score = +at('cp');
+        j.lines[mpv] = { depth: +at('depth'), score, pv: f.slice(f.indexOf('pv') + 1) };
+      } else if (line.startsWith('bestmove')) {
+        const best = line.split(' ')[1];
+        const l1 = j.lines[1], l2 = j.lines[2];
+        this.job = null;
+        j.resolve(j.cancelled ? null : {
+          move: best, best, score: l1 ? l1.score : 0, bestScore: l1 ? l1.score : 0,
+          second: l2 ? l2.score : null, pv: l1 ? l1.pv : [best], depth: l1 ? l1.depth : 0,
+        });
+        this.next();
+      }
+    }
+    cancel() {
+      const q = this.queue; this.queue = [];
+      q.forEach((j) => j.resolve(null));
+      if (this.job) { this.job.cancelled = true; this.send('stop'); }
+    }
   }
-  function think(opts) {
-    const myGen = gen;
-    const p = worker
-      ? new Promise((resolve) => { const id = ++seq; pending.set(id, { resolve, opts, myGen }); worker.postMessage({ id, opts }); })
-      : runLocal(opts, myGen);
-    return p.then((r) => (myGen === gen ? r : null));
+
+  const builtin = new BuiltinEngine();
+  const stockfish = new StockfishEngine();
+  let gen = 0, sfOk = null;
+  stockfish.load().then((ok) => { sfOk = ok; render(); });
+  function cancelEngine() { gen++; builtin.cancel(); if (sfOk) stockfish.cancel(); }
+
+  const REVIEW_MS = 500; // Stockfish per position in review (built-in fallback: 900 ms)
+  const LEVELS = AI.LEVELS.concat([
+    // Stockfish's own Elo limiter, checked against native Stockfish (see README).
+    { elo: 2400, engine: 'stockfish', uciElo: 2400, movetime: 500, fallback: { maxDepth: 64, timeMs: 1500 } },
+  ]);
+
+  async function botMove(level, moves) {
+    const g = gen;
+    let r = null;
+    if (level.engine === 'stockfish' && await stockfish.load()) {
+      r = await stockfish.request({ moves, elo: level.uciElo, movetime: level.movetime });
+    } else {
+      r = await builtin.think({ fen: E.START_FEN, moves, ...(level.fallback || level) });
+    }
+    return g === gen && r ? r.move : null;
   }
-  function cancelEngine() {
-    gen++;
-    pending.clear();
-    if (worker) { worker.terminate(); worker = makeWorker(); }
+
+  async function analyze(moves, urgent) {
+    const g = gen;
+    let r = null;
+    if (await stockfish.load()) r = await stockfish.request({ moves, movetime: REVIEW_MS, multipv: 2 }, urgent);
+    else {
+      const t = await builtin.think({ fen: E.START_FEN, moves, timeMs: 900, window: 250 });
+      if (t) r = { best: t.best, score: t.bestScore, second: t.lines[1] ? t.lines[1].score : null, pv: [t.best] };
+    }
+    return g === gen ? r : null;
   }
-  worker = makeWorker();
+  const engineLabel = () => (sfOk === null ? 'Loading Stockfish…' : sfOk ? 'Stockfish 19 Lite, running on your device' : 'Built-in engine (Stockfish could not start)');
 
   // ---- State ----
   const $ = (id) => document.getElementById(id);
   const boardEl = $('board'), statusEl = $('status'), modeEl = $('mode'), levelEl = $('level');
-  AI.LEVELS.forEach((l, i) => levelEl.insertAdjacentHTML('beforeend', `<option value="${i}">${l.elo} · ${LEVEL_NAMES[l.elo]}</option>`));
+  LEVELS.forEach((l, i) => levelEl.insertAdjacentHTML('beforeend', `<option value="${i}">${l.elo} · ${LEVEL_NAMES[l.elo]}${l.engine ? ' (Stockfish)' : ''}</option>`));
   levelEl.value = '2';
   let game, history, sans, ucis, selected, flipped = false, thinking = false, endShown = false, pendingPromo = null, resigned = null;
   let review = null;
@@ -431,14 +560,13 @@
     if (review || game.turn !== aiColor() || gameStatus().over) return;
     thinking = true;
     render();
-    const level = AI.LEVELS[+levelEl.value];
     const started = Date.now();
-    think({ fen: E.START_FEN, moves: ucis.slice(), ...level }).then((r) => {
-      if (!r || !r.move) return;
+    botMove(LEVELS[+levelEl.value], ucis.slice()).then((u) => {
+      if (!u) return;
       setTimeout(() => {
         if (!thinking) return;
         thinking = false;
-        const m = findUci(game, r.move);
+        const m = findUci(game, u);
         if (m) doMove(m); else render();
       }, Math.max(0, 350 - (Date.now() - started)));
     });
@@ -473,17 +601,21 @@
     render();
   }
 
-  // ---- Input: tap a piece then a square, or drag ----
-  const legalTo = (from, to) => E.legalMoves(game).filter((m) => m.from === from && m.to === to);
-  function play(options) { if (options.length > 1) openPromo(options); else doMove(options[0]); }
+  // ---- Input: tap a piece then a square, or drag. In review, moves start a variation. ----
+  const boardState = () => (review ? curNode().state : game);
+  const canMove = () => (review ? !E.status(curNode().state).over : humanTurn());
+  const legalTo = (from, to) => E.legalMoves(boardState()).filter((m) => m.from === from && m.to === to);
+  function commit(m) { if (review) reviewMove(m); else doMove(m); }
+  function play(options) { if (options.length > 1) openPromo(options); else commit(options[0]); }
   let dragFrom = null, deselectOnUp = false;
   boardEl.addEventListener('pointerdown', (e) => {
     const sqEl = e.target.closest('.sq');
-    if (!sqEl || !humanTurn()) return;
-    const i = +sqEl.dataset.i, p = game.board[i];
+    if (!sqEl || !canMove()) return;
+    const st = boardState();
+    const i = +sqEl.dataset.i, p = st.board[i];
     dragFrom = null;
     if (selected !== null && legalTo(selected, i).length) play(legalTo(selected, i));
-    else if (p && p.c === game.turn) { deselectOnUp = selected === i; selected = i; dragFrom = i; render(); }
+    else if (p && p.c === st.turn) { deselectOnUp = selected === i; selected = i; dragFrom = i; render(); }
     else { selected = null; render(); }
   });
   boardEl.addEventListener('pointerup', (e) => {
@@ -504,8 +636,8 @@
     for (const t of ['q', 'r', 'b', 'n']) {
       const b = document.createElement('button');
       b.title = pieceName(t);
-      b.innerHTML = pieceSVG(t, game.turn);
-      b.onclick = () => { closeModal('promoModal'); const m = pendingPromo.find((o) => o.promo === t); pendingPromo = null; doMove(m); };
+      b.innerHTML = pieceSVG(t, boardState().turn);
+      b.onclick = () => { closeModal('promoModal'); const m = pendingPromo.find((o) => o.promo === t); pendingPromo = null; commit(m); };
       box.appendChild(b);
     }
     $('promoModal').classList.add('open');
@@ -516,15 +648,16 @@
   const winPct = (cp) => (cp >= AI.MATE_BOUND ? 100 : cp <= -AI.MATE_BOUND ? 0 : 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1));
   const moveAccuracy = (loss) => Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * loss) - 3.1669));
   function fmtEval(cp) { // cp from White's view
-    if (Math.abs(cp) >= AI.MATE_BOUND) { const n = Math.ceil((AI.MATE - Math.abs(cp)) / 2); return (cp > 0 ? '' : '-') + 'M' + n; }
+    if (Math.abs(cp) >= AI.MATE_BOUND) { const n = Math.ceil((MATE - Math.abs(cp)) / 2); return (cp > 0 ? '' : '-') + 'M' + n; }
     return (cp > 0 ? '+' : '') + (cp / 100).toFixed(1);
   }
   function uciOf(m) { return E.squareName(m.from) + E.squareName(m.to) + (m.promo || ''); }
   function findUci(s, u) { return E.legalMoves(s).find((m) => uciOf(m) === u); }
+  const moveNo = (ply) => `${Math.floor(ply / 2) + 1}${ply % 2 ? '…' : '.'} `;
 
   // A move "sacrifices" material if the moved piece can be won by the opponent for less than it is worth.
-  function isSacrifice(i) {
-    const before = positions()[i], next = positions()[i + 1], m = next.lastMove;
+  function isSacrifice(before, next) {
+    const m = next.lastMove;
     const V = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
     const piece = next.board[m.to];
     if (!piece || piece.t === 'p' || piece.t === 'k') return false;
@@ -537,22 +670,29 @@
     return (defended ? V[piece.t] - minA : V[piece.t]) - gained >= 2;
   }
 
-  function classify(i) {
-    const a = review.analysis[i], b = review.analysis[i + 1];
-    const before = winPct(a.score), after = winPct(-b.score);
-    const loss = Math.max(0, before - after);
+  // Classify the move from `before` to `next`, given engine analysis of both positions (side-to-move view).
+  function classifyMove(before, next, a, b, uci, movesSoFar) {
+    const wpBefore = winPct(a.score), wpAfter = winPct(-b.score);
+    const loss = Math.max(0, wpBefore - wpAfter);
     let c;
-    if (isBook(ucis, i)) c = 'book';
-    else if (ucis[i] === a.best || loss < 0.5) {
+    if (isBook(movesSoFar, movesSoFar.length - 1)) c = 'book';
+    else if (uci === a.best || loss < 0.5) {
       c = 'best';
-      if (ucis[i] === a.best && before < 97 && after >= 45 && isSacrifice(i)) c = 'brilliant';
-      else if (ucis[i] === a.best && a.second !== null && before - winPct(a.second) >= 18 && after >= 30 && before < 95) c = 'great';
+      if (uci === a.best && wpBefore < 97 && wpAfter >= 45 && isSacrifice(before, next)) c = 'brilliant';
+      else if (uci === a.best && a.second !== null && wpBefore - winPct(a.second) >= 18 && wpAfter >= 30 && wpBefore < 95) c = 'great';
     } else if (loss <= 2) c = 'excellent';
     else if (loss <= 5) c = 'good';
     else if (loss <= 10) c = 'inaccuracy';
     else if (loss <= 20) c = 'mistake';
     else c = 'blunder';
-    review.cls[i] = { c, loss, acc: c === 'book' ? 100 : moveAccuracy(loss) };
+    return { c, loss, acc: c === 'book' ? 100 : moveAccuracy(loss) };
+  }
+
+  async function analysisFor(state, moves, urgent) {
+    const st = E.status(state);
+    if (st.over && st.result === 'checkmate') return { score: -MATE, best: null, second: null, pv: [] };
+    if (st.over) return { score: 0, best: null, second: null, pv: [] };
+    return analyze(moves, urgent);
   }
 
   async function startReview() {
@@ -561,69 +701,155 @@
     thinking = false; selected = null;
     closeModal('endModal');
     const pos = positions();
-    review = { idx: pos.length - 1, analysis: new Array(pos.length), cls: [], done: 0 };
+    review = { cur: { line: -1, k: pos.length - 1 }, analysis: new Array(pos.length), cls: [], done: 0, lines: [] };
     const myReview = review;
     render();
     for (let i = 0; i < pos.length; i++) {
       if (review !== myReview) return;
-      const st = E.status(pos[i]);
-      let a;
-      if (st.over && st.result === 'checkmate') a = { score: -AI.MATE, best: null, second: null };
-      else if (st.over) a = { score: 0, best: null, second: null };
-      else {
-        const r = await think({ fen: E.START_FEN, moves: ucis.slice(0, i), timeMs: REVIEW_MS, window: 250 });
-        if (!r || review !== myReview) return;
-        a = { score: r.bestScore, best: r.best, second: r.lines[1] ? r.lines[1].score : null };
+      if (!review.analysis[i]) {
+        const a = await analysisFor(pos[i], ucis.slice(0, i), false);
+        if (!a || review !== myReview) return;
+        if (!review.analysis[i]) review.analysis[i] = a;
       }
-      review.analysis[i] = a;
       review.done = i + 1;
-      if (i > 0) classify(i - 1);
+      if (i > 0) review.cls[i - 1] = classifyMove(pos[i - 1], pos[i], review.analysis[i - 1], review.analysis[i], ucis[i - 1], ucis.slice(0, i));
       render();
     }
   }
-  function exitReview() { cancelEngine(); review = null; render(); maybeAI(); }
-  function goto(idx) { if (!review) return; review.idx = Math.max(0, Math.min(positions().length - 1, idx)); render(); }
-  const moveNo = (i) => `${Math.floor(i / 2) + 1}${i % 2 ? '…' : '.'} `;
+  function exitReview() { cancelEngine(); review = null; selected = null; render(); maybeAI(); }
+
+  // The position being viewed in review: on the main line, or k moves into variation `line`.
+  function curNode() {
+    const c = review.cur, pos = positions();
+    if (c.line < 0) {
+      const k = c.k;
+      return {
+        state: pos[k], analysis: review.analysis[k], moves: ucis.slice(0, k), path: pos.slice(0, k + 1),
+        move: k > 0 ? { san: sans[k - 1], cls: review.cls[k - 1], prevState: pos[k - 1], prevAnalysis: review.analysis[k - 1], uci: ucis[k - 1], ply: k - 1 } : null,
+      };
+    }
+    const L = review.lines[c.line], k = c.k;
+    return {
+      state: L.states[k - 1], analysis: L.analysis[k - 1], moves: ucis.slice(0, L.start).concat(L.moves.slice(0, k)),
+      path: pos.slice(0, L.start + 1).concat(L.states.slice(0, k)),
+      move: {
+        san: L.sans[k - 1], cls: L.cls[k - 1], prevState: k > 1 ? L.states[k - 2] : pos[L.start],
+        prevAnalysis: k > 1 ? L.analysis[k - 2] : review.analysis[L.start], uci: L.moves[k - 1], ply: L.start + k - 1,
+      },
+    };
+  }
+
+  // A move played on the board during review follows the game, an existing variation, or starts a new one.
+  function reviewMove(m) {
+    const c = review.cur, node = curNode(), u = uciOf(m);
+    const next = E.makeMove(node.state, m), san = E.san(node.state, m);
+    selected = null;
+    if (c.line < 0) {
+      if (c.k < ucis.length && ucis[c.k] === u) { review.cur = { line: -1, k: c.k + 1 }; render(); return; }
+      let li = review.lines.findIndex((l) => l.start === c.k && l.moves[0] === u);
+      if (li < 0) { review.lines.push({ start: c.k, moves: [u], sans: [san], states: [next], analysis: [], cls: [] }); li = review.lines.length - 1; }
+      review.cur = { line: li, k: 1 };
+    } else {
+      const L = review.lines[c.line];
+      if (c.k < L.moves.length && L.moves[c.k] === u) { review.cur = { line: c.line, k: c.k + 1 }; render(); return; }
+      for (const arr of [L.moves, L.sans, L.states, L.analysis, L.cls]) arr.length = Math.min(arr.length, c.k);
+      L.moves.push(u); L.sans.push(san); L.states.push(next);
+      review.cur = { line: c.line, k: c.k + 1 };
+    }
+    render();
+    analyzeVariation(review.lines[review.cur.line], review.cur.k);
+  }
+
+  async function analyzeVariation(L, k) {
+    const myReview = review, state = L.states[k - 1];
+    const moves = ucis.slice(0, L.start).concat(L.moves.slice(0, k));
+    const prevState = k > 1 ? L.states[k - 2] : positions()[L.start];
+    let prev = k > 1 ? L.analysis[k - 2] : review.analysis[L.start];
+    if (!prev) {
+      prev = await analysisFor(prevState, moves.slice(0, -1), true);
+      if (!prev || review !== myReview) return;
+      if (k > 1) { if (L.states[k - 2] === prevState) L.analysis[k - 2] = prev; } else if (!review.analysis[L.start]) review.analysis[L.start] = prev;
+    }
+    const a = L.analysis[k - 1] && L.states[k - 1] === state ? L.analysis[k - 1] : await analysisFor(state, moves, true);
+    if (!a || review !== myReview || L.states[k - 1] !== state) return;
+    L.analysis[k - 1] = a;
+    L.cls[k - 1] = classifyMove(prevState, state, prev, a, L.moves[k - 1], moves);
+    render();
+  }
+
+  function goto(line, k) {
+    if (!review) return;
+    if (line < 0) k = Math.max(0, Math.min(positions().length - 1, k));
+    else k = Math.max(1, Math.min(review.lines[line].moves.length, k));
+    review.cur = { line, k }; selected = null; render();
+  }
+  function step(d) {
+    const c = review.cur;
+    if (c.line < 0) return goto(-1, c.k + d);
+    if (c.k + d < 1) return goto(-1, review.lines[c.line].start);
+    goto(c.line, c.k + d);
+  }
+  function deleteLine(li) {
+    const L = review.lines[li];
+    review.lines.splice(li, 1);
+    if (review.cur.line === li) review.cur = { line: -1, k: L.start };
+    else if (review.cur.line > li) review.cur.line--;
+    render();
+  }
+
+  function pvSan(state, pv, max = 10) {
+    const out = [];
+    let s = state;
+    for (const u of (pv || []).slice(0, max)) {
+      const m = findUci(s, u);
+      if (!m) break;
+      const ply = (s.fullmove - 1) * 2 + (s.turn === 'b' ? 1 : 0);
+      out.push((s.turn === 'w' || !out.length ? moveNo(ply) : '') + E.san(s, m));
+      s = E.makeMove(s, m);
+    }
+    return out.join(' ');
+  }
 
   function renderReview() {
-    const pos = positions(), n = pos.length;
+    const pos = positions(), n = pos.length, node = curNode();
     $('reviewProgress').style.width = (100 * review.done / n) + '%';
     $('reviewProgressText').textContent = review.done < n
-      ? `Analyzing with the strongest bot… ${review.done}/${n} positions`
-      : `Analyzed ${n - 1} moves with the strongest bot`;
+      ? `Analyzing… ${review.done}/${n} positions`
+      : `Analyzed ${n - 1} moves. Play moves on the board to explore variations.`;
+    $('engineLabel').textContent = 'Engine: ' + engineLabel();
     for (const c of ['w', 'b']) {
       const accs = review.cls.filter((x, i) => x && (i % 2 === 0) === (c === 'w')).map((x) => x.acc);
       $(c === 'w' ? 'accW' : 'accB').textContent = accs.length ? (accs.reduce((a, b) => a + b, 0) / accs.length).toFixed(1) : '–';
     }
-    // Comment on the move that led to the viewed position
-    const i = review.idx - 1, cm = $('comment');
-    const a = review.analysis[review.idx];
-    const ev = a ? (pos[review.idx].turn === 'w' ? a.score : -a.score) : null;
+    // Comment on the move that led to the viewed position, plus the engine's line from here
+    const cm = $('comment'), a = node.analysis, mv = node.move;
+    const ev = a ? (node.state.turn === 'w' ? a.score : -a.score) : null;
     const evalTxt = ev !== null ? 'Evaluation ' + fmtEval(ev) : 'Analyzing…';
-    if (i < 0) cm.innerHTML = `<div><b>Starting position</b><div class="ev">${evalTxt}. Use ◀ ▶ or the arrow keys to step through the game.</div></div>`;
-    else if (!review.cls[i]) cm.innerHTML = `<div><b>${moveNo(i)}${sans[i]}</b><div class="ev">Analyzing…</div></div>`;
+    const line = a && a.pv && a.pv.length ? `<div class="ev">Best line: ${pvSan(node.state, a.pv)}</div>` : '';
+    const varTag = review.cur.line >= 0 ? '<span class="tag">Variation</span> ' : '';
+    if (!mv) cm.innerHTML = `<div><b>Starting position</b><div class="ev">${evalTxt}</div>${line}</div>`;
+    else if (!mv.cls) cm.innerHTML = `<div>${varTag}<b>${moveNo(mv.ply)}${mv.san}</b><div class="ev">Analyzing…</div></div>`;
     else {
-      const k = review.cls[i].c, prev = review.analysis[i];
+      const k = mv.cls.c;
       const phrases = { brilliant: 'is brilliant!', great: 'is a great move. It was the only move that holds.', best: 'is the best move.',
         excellent: 'is excellent.', good: 'is a good move.', book: 'is a book move.', inaccuracy: 'is an inaccuracy.',
         mistake: 'is a mistake.', blunder: 'is a blunder.' };
       let bestTxt = '';
-      if (prev.best && prev.best !== ucis[i] && !['book', 'best'].includes(k)) {
-        const bm = findUci(pos[i], prev.best);
-        if (bm) bestTxt = ` The best move was <b>${E.san(pos[i], bm)}</b>.`;
+      if (mv.prevAnalysis && mv.prevAnalysis.best && mv.prevAnalysis.best !== mv.uci && !['book', 'best'].includes(k)) {
+        const bm = findUci(mv.prevState, mv.prevAnalysis.best);
+        if (bm) bestTxt = ` The best move was <b>${E.san(mv.prevState, bm)}</b>.`;
       }
-      cm.innerHTML = `${clsIcon(k)}<div><b>${moveNo(i)}${sans[i]}</b> ${phrases[k]}${bestTxt}<div class="ev">${evalTxt}</div></div>`;
+      cm.innerHTML = `${clsIcon(k)}<div>${varTag}<b>${moveNo(mv.ply)}${mv.san}</b> ${phrases[k]}${bestTxt}<div class="ev">${evalTxt}</div>${line}</div>`;
     }
     // Eval bar (White's share fills from White's side of the board)
-    const bar = $('evalbar');
-    bar.classList.toggle('flipped', flipped);
+    $('evalbar').classList.toggle('flipped', flipped);
     if (ev !== null) {
       $('evalfill').style.height = Math.max(3, Math.min(97, winPct(ev))) + '%';
       const num = $('evalnum');
       num.textContent = fmtEval(ev).replace('+', '');
       num.className = 'num ' + ((ev >= 0) !== flipped ? 'bottom' : 'top');
     }
-    // Evaluation graph
+    // Evaluation graph (main line)
     const g = $('graph'), W = 300, H = 64, pts = [];
     for (let k = 0; k < n; k++) {
       const an = review.analysis[k];
@@ -639,10 +865,11 @@
         svg += `<circle cx="${pts[k + 1][0]}" cy="${pts[k + 1][1]}" r="3" fill="${CLS[x.c].color}" stroke="#222" stroke-width=".6"/>`;
       }
     });
-    const cx = n > 1 ? (review.idx / (n - 1)) * W : 0;
+    const mainIdx = review.cur.line < 0 ? review.cur.k : review.lines[review.cur.line].start;
+    const cx = n > 1 ? (mainIdx / (n - 1)) * W : 0;
     svg += `<line x1="${cx}" x2="${cx}" y1="0" y2="${H}" stroke="#81b64c" stroke-width="2"/>`;
     g.innerHTML = svg;
-    // Classification counts
+    // Classification counts (main line)
     let html = '<span></span><span class="h">White</span><span class="h">Black</span>';
     for (const k of CLS_ORDER) {
       const cw = review.cls.filter((x, j) => x && x.c === k && j % 2 === 0).length;
@@ -650,19 +877,23 @@
       html += `<span class="lbl">${clsIcon(k)}${CLS[k].label}</span><span class="v" style="color:${cw ? CLS[k].color : 'var(--muted)'}">${cw}</span><span class="v" style="color:${cb ? CLS[k].color : 'var(--muted)'}">${cb}</span>`;
     }
     $('counts').innerHTML = html;
-    $('navFirst').disabled = $('navPrev').disabled = review.idx === 0;
-    $('navNext').disabled = $('navLast').disabled = review.idx === n - 1;
+    const atStart = review.cur.line < 0 && review.cur.k === 0;
+    const atEnd = review.cur.line < 0 ? review.cur.k === n - 1 : review.cur.k === review.lines[review.cur.line].moves.length;
+    $('navFirst').disabled = $('navPrev').disabled = atStart;
+    $('navNext').disabled = atEnd;
+    $('navLast').disabled = review.cur.line < 0 && review.cur.k === n - 1;
   }
 
   // ---- Rendering ----
   function render() {
     $('app').classList.toggle('review-on', !!review);
     const pos = positions();
-    const view = review ? pos[review.idx] : game;
-    const legal = !review && selected !== null ? E.legalMoves(game).filter((m) => m.from === selected) : [];
+    const node = review ? curNode() : null;
+    const view = review ? node.state : game;
+    const legal = selected !== null && canMove() ? E.legalMoves(view).filter((m) => m.from === selected) : [];
     const last = view.lastMove;
     const kingInCheck = E.inCheck(view) ? view.board.findIndex((p) => p && p.t === 'k' && p.c === view.turn) : -1;
-    const badge = review && review.idx > 0 && review.cls[review.idx - 1] ? review.cls[review.idx - 1].c : null;
+    const badge = node && node.move && node.move.cls ? node.move.cls.c : null;
 
     boardEl.innerHTML = '';
     for (let v = 0; v < 64; v++) {
@@ -673,10 +904,10 @@
       d.dataset.i = i;
       d.style.backgroundPosition = `${-((i * 97) % 170)}px ${-((i * 61) % 170)}px`;
       if (last && (last.from === i || last.to === i)) d.classList.add('last');
-      if (selected === i && !review) d.classList.add('sel');
+      if (selected === i) d.classList.add('sel');
       if (kingInCheck === i) d.classList.add('check');
       const target = legal.find((m) => m.to === i);
-      if (target) d.classList.add('target', game.board[i] || target.enPassant ? 'capture' : 'quiet');
+      if (target) d.classList.add('target', view.board[i] || target.enPassant ? 'capture' : 'quiet');
       const p = view.board[i];
       if (p) {
         d.innerHTML = pieceSVG(p.t, p.c);
@@ -688,48 +919,63 @@
       boardEl.appendChild(d);
     }
     // In review, show the engine's best move as an arrow when the played move wasn't best
-    if (review && review.idx > 0 && review.cls[review.idx - 1] && !['best', 'book', 'brilliant', 'great'].includes(review.cls[review.idx - 1].c)) {
-      const best = review.analysis[review.idx - 1].best;
-      const bm = best && findUci(pos[review.idx - 1], best);
+    if (node && node.move && node.move.cls && !['best', 'book', 'brilliant', 'great'].includes(node.move.cls.c)) {
+      const best = node.move.prevAnalysis && node.move.prevAnalysis.best;
+      const bm = best && findUci(node.move.prevState, best);
       if (bm) boardEl.insertAdjacentHTML('beforeend', arrowSVG(bm.from, bm.to));
     }
 
     // Status line
     const gs = gameStatus();
     let msg;
-    if (review) msg = 'Game review';
+    if (review) msg = review.cur.line >= 0 ? 'Game review: exploring a variation' : 'Game review';
     else if (gs.over) {
       if (gs.result === 'checkmate') msg = `Checkmate! ${NAMES[gs.winner]} wins`;
       else if (gs.result === 'resign') msg = `${NAMES[other(gs.winner)]} resigned. ${NAMES[gs.winner]} wins`;
       else msg = `Draw by ${drawReason(gs.result)}`;
-    } else if (thinking) msg = `Computer (${AI.LEVELS[+levelEl.value].elo}) is thinking…`;
+    } else if (thinking) msg = `Computer (${LEVELS[+levelEl.value].elo}) is thinking…`;
     else msg = `${NAMES[game.turn]} to move${gs.check ? ', check!' : ''}`;
     const sw = review ? view.turn : gs.over && gs.winner ? gs.winner : game.turn;
     statusEl.innerHTML = `<span class="swatch ${sw}"></span>${msg}`;
 
-    // Captured pieces (up to the viewed position)
+    // Captured pieces (along the viewed line)
     const caps = { w: [], b: [] };
-    const upto = review ? review.idx : pos.length - 1;
-    for (let k = 1; k <= upto; k++) if (pos[k].captured) caps[pos[k - 1].turn].push(pos[k].captured);
+    const path = node ? node.path : pos;
+    for (let k = 1; k < path.length; k++) if (path[k].captured) caps[path[k - 1].turn].push(path[k].captured);
     const order = 'qrbnp';
     for (const c of ['w', 'b']) {
       caps[c].sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t));
       $(c === 'w' ? 'capW' : 'capB').innerHTML = caps[c].map((p) => pieceSVG(p.t, p.c, '')).join('');
     }
 
-    // Move list
-    const mv = $('moves');
-    const cur = review ? review.idx - 1 : sans.length - 1;
+    // Move list, with review variations under the move they branch from
+    const mvEl = $('moves');
+    const cur = review ? (review.cur.line < 0 ? review.cur.k - 1 : -2) : sans.length - 1;
     const cell = (k) => {
       if (k >= sans.length) return '<span></span>';
       const icon = review && review.cls[k] ? clsIcon(review.cls[k].c) : '';
       return `<span><span class="mv${k === cur ? ' cur' : ''}" data-k="${k}">${icon}${sans[k]}</span></span>`;
     };
+    const varRow = (L, li) => {
+      let h = '';
+      L.sans.forEach((s, j) => {
+        const ply = L.start + j;
+        const num = ply % 2 === 0 || j === 0 ? `<span class="vn">${moveNo(ply)}</span>` : '';
+        const icon = L.cls[j] ? clsIcon(L.cls[j].c) : '';
+        const isCur = review.cur.line === li && review.cur.k === j + 1;
+        h += `${num}<span class="mv${isCur ? ' cur' : ''}" data-line="${li}" data-k="${j + 1}">${icon}${s}</span> `;
+      });
+      return `<div class="var">${h}<button class="vdel" data-del="${li}" title="Delete variation">×</button></div>`;
+    };
     let html = '';
-    for (let k = 0; k < sans.length; k += 2) html += `<span class="n">${k / 2 + 1}.</span>${cell(k)}${cell(k + 1)}`;
-    mv.innerHTML = html;
-    const curEl = mv.querySelector('.mv.cur');
-    if (curEl) mv.scrollTop = curEl.offsetTop - mv.offsetTop - mv.clientHeight / 2;
+    for (let k = 0; k < sans.length; k += 2) {
+      html += `<span class="n">${k / 2 + 1}.</span>${cell(k)}${cell(k + 1)}`;
+      if (review) review.lines.forEach((L, li) => { if (L.start === k || L.start === k + 1) html += varRow(L, li); });
+    }
+    if (review) review.lines.forEach((L, li) => { if (L.start >= sans.length + (sans.length % 2)) html += varRow(L, li); });
+    mvEl.innerHTML = html;
+    const curEl = mvEl.querySelector('.mv.cur');
+    if (curEl) mvEl.scrollTop = curEl.offsetTop - mvEl.offsetTop - mvEl.clientHeight / 2;
 
     $('undo').disabled = !history.length || !!review;
     $('reviewBtn').disabled = !history.length || !!review;
@@ -777,19 +1023,27 @@
   $('pieceSet').onchange = (e) => { pieceSet = e.target.value; render(); };
   modeEl.onchange = newGame;
   levelEl.onchange = () => { if (!history.length) newGame(); };
-  $('navFirst').onclick = () => goto(0);
-  $('navPrev').onclick = () => goto(review.idx - 1);
-  $('navNext').onclick = () => goto(review.idx + 1);
-  $('navLast').onclick = () => goto(positions().length - 1);
-  $('moves').addEventListener('click', (e) => { const el = e.target.closest('.mv'); if (el && review) goto(+el.dataset.k + 1); });
+  $('navFirst').onclick = () => goto(-1, 0);
+  $('navPrev').onclick = () => step(-1);
+  $('navNext').onclick = () => step(1);
+  $('navLast').onclick = () => goto(-1, positions().length - 1);
+  $('moves').addEventListener('click', (e) => {
+    if (!review) return;
+    const del = e.target.closest('.vdel');
+    if (del) return deleteLine(+del.dataset.del);
+    const el = e.target.closest('.mv');
+    if (!el) return;
+    if (el.dataset.line !== undefined) goto(+el.dataset.line, +el.dataset.k);
+    else goto(-1, +el.dataset.k + 1);
+  });
   $('graph').addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
-    goto(Math.round(((e.clientX - r.left) / r.width) * (positions().length - 1)));
+    goto(-1, Math.round(((e.clientX - r.left) / r.width) * (positions().length - 1)));
   });
   document.addEventListener('keydown', (e) => {
     if (!review || e.target.tagName === 'SELECT') return;
-    if (e.key === 'ArrowLeft') { goto(review.idx - 1); e.preventDefault(); }
-    if (e.key === 'ArrowRight') { goto(review.idx + 1); e.preventDefault(); }
+    if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
   });
 
   newGame();
