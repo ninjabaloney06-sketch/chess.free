@@ -36,5 +36,22 @@ if (E.san(g, m) !== 'Nf6') { ok = false; console.log('FAIL san'); }
 const mate = E.fromFEN('6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1');
 const bm = E.bestMove(mate, 2);
 if (E.status(E.makeMove(mate, bm)).result !== 'checkmate') { ok = false; console.log('FAIL ai mate-in-1'); }
+// Search engine (ai.js): its own move generator must agree with perft, and it must find mates.
+const AI = require('./ai.js');
+for (const [fen, counts] of cases) {
+  counts.forEach((want, i) => {
+    const got = AI.perft(fen, i + 1);
+    if (got !== want) { ok = false; console.log(`FAIL ai perft ${fen} d${i + 1}: got ${got}, want ${want}`); }
+  });
+}
+const aiMate = AI.think({ fen: '6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1', timeMs: 500 });
+if (aiMate.move !== 'a1a8') { ok = false; console.log('FAIL ai back-rank mate', aiMate.move); }
+const scholar = AI.think({ fen: E.START_FEN, moves: ['e2e4', 'e7e5', 'f1c4', 'b8c6', 'd1h5', 'g8f6'], timeMs: 500 });
+if (scholar.move !== 'h5f7') { ok = false; console.log('FAIL ai scholar mate', scholar.move); }
+for (const level of AI.LEVELS) {
+  const r = AI.think({ fen: E.START_FEN, moves: ['e2e4'], ...level });
+  if (!E.legalMoves(E.makeMove(E.newGame(), E.legalMoves(E.newGame()).find((m) => E.squareName(m.to) === 'e4')))
+    .some((m) => E.squareName(m.from) + E.squareName(m.to) === r.move)) { ok = false; console.log('FAIL level', level.elo, r.move); }
+}
 console.log(ok ? 'ALL TESTS PASSED' : 'SOME TESTS FAILED');
 process.exit(ok ? 0 : 1);
