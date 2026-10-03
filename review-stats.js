@@ -55,7 +55,7 @@
 
   // Performance rating from average centipawn loss, fitted to games of this app's bots, whose
   // ratings were measured against Stockfish (see calibrate-review.js and the README).
-  const ELO_FIT = { a: 2850, b: 0.0115 };
+  const ELO_FIT = { a: 3200, b: 0.0134 };
   const MIN_MOVES_FOR_ELO = 8;
   function estimateElo(avgLoss, counted) {
     if (avgLoss === null || counted < MIN_MOVES_FOR_ELO) return null;
