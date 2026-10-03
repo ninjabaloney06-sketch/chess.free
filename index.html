@@ -259,7 +259,7 @@
 
 <script src="engine.js?v=2"></script>
 <script src="ai.js?v=2"></script>
-<script src="review-stats.js?v=2"></script>
+<script src="review-stats.js?v=3"></script>
 <script>
 (function () {
   'use strict';
@@ -850,6 +850,16 @@
     return (defended ? V[piece.t] - minA : V[piece.t]) - gained >= 2;
   }
 
+  // Moves too natural to call Great even when they are the only good one: getting out of check,
+  // recapturing, or taking a piece worth at least as much as the capturer (finishing a trade).
+  function isObvious(before, next) {
+    const m = next.lastMove, V = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+    if (E.inCheck(before)) return true;
+    if (!next.captured) return false;
+    if (before.captured && before.lastMove && before.lastMove.to === m.to) return true;
+    return V[next.captured.t] >= V[before.board[m.from].t];
+  }
+
   // Classify the move from `before` to `next`, given engine analysis of both positions (side-to-move view).
   function classifyMove(before, next, a, b, uci, movesSoFar) {
     const wpBefore = winPct(a.score), wpAfter = winPct(-b.score);
@@ -859,14 +869,15 @@
     else if (uci === a.best || loss < 0.5) {
       c = 'best';
       if (uci === a.best && wpBefore < 97 && wpAfter >= 45 && isSacrifice(before, next)) c = 'brilliant';
-      else if (uci === a.best && a.second !== null && wpBefore - winPct(a.second) >= 18 && wpAfter >= 30 && wpBefore < 95) c = 'great';
+      else if (uci === a.best && a.second !== null && wpBefore - winPct(a.second) >= 18 && wpAfter >= 30 && wpBefore < 95
+        && !isObvious(before, next)) c = 'great';
     } else if (loss <= 2) c = 'excellent';
     else if (loss <= 5) c = 'good';
     else if (loss <= 10) c = 'inaccuracy';
     else if (loss <= 20) c = 'mistake';
     else c = 'blunder';
     const cpLoss = Math.max(0, RS.cpClamp(a.score) - RS.cpClamp(-b.score));
-    return { c, loss, cpLoss, acc: c === 'book' ? 100 : RS.moveAccuracy(loss), counted: c !== 'book' };
+    return { c, loss, cpLoss, acc: c === 'book' ? 100 : RS.moveAccuracy(loss), counted: c !== 'book', decided: RS.decided(wpBefore, wpAfter) };
   }
 
   async function analysisFor(state, moves, urgent) {
@@ -1021,7 +1032,8 @@
     $('deepReview').disabled = review.deep;
     $('deepReview').textContent = review.deep || deepCached ? 'Deep review' : 'Deep review (≈99 MB download)';
     $('engineLabel').textContent = 'Engine: ' + engineLabel();
-    // Accuracy and estimated rating over the game's main line (book moves don't count)
+    // Accuracy and estimated rating over the game's main line (book moves don't count, nor do
+    // moves in already-decided positions for the rating)
     let lastWin = 50;
     const whiteWin = pos.map((st, k) => {
       const an = review.analysis[k];
@@ -1029,15 +1041,15 @@
       return lastWin;
     });
     const moves = pos.slice(1).map((_, k) => review.cls[k] || null);
-    const cpLoss = moves.map((m) => (m && m.counted ? m.cpLoss : null));
+    const cpLoss = moves.map((m) => (m && m.counted && !m.decided ? m.cpLoss : null));
     for (const c of ['w', 'b']) {
       const acc = RS.gameAccuracy(whiteWin, moves, c);
-      const counted = moves.filter((m, k) => m && m.counted && (k % 2 === 0) === (c === 'w')).length;
+      const counted = cpLoss.filter((x, k) => x !== null && (k % 2 === 0) === (c === 'w')).length;
       const elo = RS.estimateElo(RS.acpl(cpLoss, c), counted);
       $(c === 'w' ? 'accW' : 'accB').textContent = acc === null ? '–' : acc.toFixed(1);
       $(c === 'w' ? 'eloW' : 'eloB').textContent = elo === null ? '–' : '≈' + elo;
       $(c === 'w' ? 'eloW' : 'eloB').title = elo === null
-        ? `Needs at least ${RS.MIN_MOVES_FOR_ELO} non-book moves`
+        ? `Needs at least ${RS.MIN_MOVES_FOR_ELO} non-book moves before the game is decided`
         : `Average centipawn loss ${RS.acpl(cpLoss, c).toFixed(0)} over ${counted} moves`;
     }
     // Comment on the move that led to the viewed position, plus the engine's line from here

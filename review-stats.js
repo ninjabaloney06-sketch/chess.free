@@ -47,22 +47,31 @@
     return clamp(0.25 * weighted + 0.75 * power, 0, 100);
   }
 
+  // A move made when the game was already decided (the mover's win chance at least DECIDED, or at
+  // most 100 - DECIDED, both before and after it) says little about strength: the easy moves of a
+  // won ending, or a mating sequence, would otherwise count as perfect. It is left out of the rating.
+  const DECIDED = 95;
+  const decided = (wpBefore, wpAfter) => (wpBefore >= DECIDED && wpAfter >= DECIDED) || (wpBefore <= 100 - DECIDED && wpAfter <= 100 - DECIDED);
+
   // Average centipawn loss for one player. cpLoss: per ply, centipawns lost (null = not counted).
   function acpl(cpLoss, color) {
     const xs = cpLoss.filter((x, k) => x !== null && x !== undefined && (k % 2 === 0) === (color === 'w'));
     return xs.length ? mean(xs) : null;
   }
 
-  // Performance rating from average centipawn loss, fitted to games of this app's bots, whose
-  // ratings were measured against Stockfish (see calibrate-review.js and the README).
-  const ELO_FIT = { a: 3200, b: 0.0134 };
+  // Performance rating from average centipawn loss (decided positions left out): a least-squares
+  // fit of the true rating on ln(ACPL) over 358 sides of games between this app's bots, same and
+  // mixed levels (see calibrate-review.js and the README). Fitting rating on ACPL, rather than the
+  // other way round, pulls single-game estimates toward the middle, which is right for so noisy a
+  // measure: an easy win over a weak opponent no longer reads as a 2300 performance.
+  const ELO_FIT = { a: 3490, b: 463 };
   const MIN_MOVES_FOR_ELO = 8;
   function estimateElo(avgLoss, counted) {
     if (avgLoss === null || counted < MIN_MOVES_FOR_ELO) return null;
-    return Math.round(clamp(ELO_FIT.a * Math.exp(-ELO_FIT.b * avgLoss), 100, 3000) / 25) * 25;
+    return Math.round(clamp(ELO_FIT.a - ELO_FIT.b * Math.log(Math.max(avgLoss, 5)), 100, 3000) / 25) * 25;
   }
 
-  const api = { MATE_BOUND, winPct, moveAccuracy, cpClamp, gameAccuracy, acpl, estimateElo, ELO_FIT, MIN_MOVES_FOR_ELO };
+  const api = { MATE_BOUND, winPct, moveAccuracy, cpClamp, gameAccuracy, DECIDED, decided, acpl, estimateElo, ELO_FIT, MIN_MOVES_FOR_ELO };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ReviewStats = api;
 })(typeof window !== 'undefined' ? window : globalThis);

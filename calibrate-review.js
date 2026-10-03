@@ -1,8 +1,9 @@
 // Calibrates the review's rating estimate. Bots of known strength play each other, Stockfish analyzes
 // every position, and each side's average centipawn loss and accuracy are printed as JSON lines.
-// Usage: node calibrate-review.js <level> <games> [analysisMovetimeMs] [botMovetimeMs]
+// Usage: node calibrate-review.js <level>[:<level2>] <games> [analysisMovetimeMs] [botMovetimeMs]
 //   <level> is a built-in level's Elo (e.g. 1400) or "sf<Elo>" for strength-limited Stockfish (e.g. sf2400).
-// Both sides use the same level, so every analyzed move comes from a player of that rating.
+//   With one level both sides play it; with two, they swap colors every game.
+// Each line also carries the game's per-ply scores (side to move's view), so estimators can be refit offline.
 const path = require('path');
 const E = require('./engine.js');
 const AI = require('./ai.js');
@@ -10,9 +11,13 @@ const S = require('./review-stats.js');
 const { spawn } = require('child_process');
 
 const [levelArg, games = 6, anaMs = 150, botMs = 300] = process.argv.slice(2);
-const sfElo = levelArg.startsWith('sf') ? +levelArg.slice(2) : null;
-const level = sfElo ? null : AI.LEVELS.find((l) => l.elo === +levelArg);
-if (!sfElo && !level) throw new Error('Unknown level ' + levelArg);
+const players = levelArg.split(':').map((name) => {
+  const sfElo = name.startsWith('sf') ? +name.slice(2) : null;
+  const level = sfElo ? null : AI.LEVELS.find((l) => l.elo === +name);
+  if (!sfElo && !level) throw new Error('Unknown level ' + name);
+  return { name, sfElo, level };
+});
+if (players.length === 1) players.push(players[0]);
 
 const OPENINGS = [
   'e2e4 e7e5 g1f3 b8c6', 'e2e4 c7c5 g1f3 d7d6', 'd2d4 d7d5 c2c4 e7e6', 'd2d4 g8f6 c2c4 g7g6',
@@ -40,8 +45,9 @@ const uci = (m) => E.squareName(m.from) + E.squareName(m.to) + (m.promo || '');
 
 (async () => {
   const ana = uciEngine({ Hash: 64 });
-  const bot = sfElo ? uciEngine({ UCI_LimitStrength: true, UCI_Elo: sfElo, Hash: 32 }) : null;
-  await ana.ready; if (bot) await bot.ready;
+  for (const p of players) if (p.sfElo && !p.bot) p.bot = uciEngine({ UCI_LimitStrength: true, UCI_Elo: p.sfElo, Hash: 32 });
+  await ana.ready;
+  for (const p of players) if (p.bot) await p.bot.ready;
 
   // Score from the side to move's view, in centipawns (mates as ±(MATE - plies)).
   async function analyse(hist, s) {
@@ -54,7 +60,8 @@ const uci = (m) => E.squareName(m.from) + E.squareName(m.to) + (m.promo || '');
     const m = infos[infos.length - 1].match(/ score (cp|mate) (-?\d+)/);
     return m[1] === 'cp' ? +m[2] : (+m[2] > 0 ? AI.MATE - 2 * +m[2] : -AI.MATE - 2 * +m[2]);
   }
-  async function botMove(hist) {
+  async function botMove(p, hist) {
+    const { bot, level } = p;
     if (!bot) return AI.think({ fen: E.START_FEN, moves: hist, ...level }).move;
     bot.send(`position startpos moves ${hist.join(' ')}`);
     bot.send(`go movetime ${botMs}`);
@@ -66,10 +73,13 @@ const uci = (m) => E.squareName(m.from) + E.squareName(m.to) + (m.promo || '');
     let s = E.newGame();
     const hist = [];
     for (const u of opening) { hist.push(u); s = E.makeMove(s, E.legalMoves(s).find((x) => uci(x) === u)); }
-    ana.send('ucinewgame'); if (bot) bot.send('ucinewgame');
+    // Players swap colors every game (the same player both sides when only one level was given).
+    const side = { w: players[g % 2], b: players[(g + 1) % 2] };
+    ana.send('ucinewgame');
+    for (const p of players) if (p.bot) p.bot.send('ucinewgame');
     const scores = [await analyse(hist, s)];
     while (!E.status(s).over && hist.length < 130) {
-      const mv = await botMove(hist);
+      const mv = await botMove(side[s.turn], hist);
       hist.push(mv);
       s = E.makeMove(s, E.legalMoves(s).find((x) => uci(x) === mv));
       scores.push(await analyse(hist, s));
@@ -81,18 +91,20 @@ const uci = (m) => E.squareName(m.from) + E.squareName(m.to) + (m.promo || '');
     for (let k = 0; k + 1 < scores.length; k++) {
       const loss = Math.max(0, S.winPct(scores[k]) - S.winPct(-scores[k + 1]));
       moves.push({ acc: S.moveAccuracy(loss), counted: true });
-      cpLoss.push(Math.max(0, S.cpClamp(scores[k]) - S.cpClamp(-scores[k + 1])));
+      const decided = S.decided(S.winPct(scores[k]), S.winPct(-scores[k + 1]));
+      cpLoss.push(decided ? null : Math.max(0, S.cpClamp(scores[k]) - S.cpClamp(-scores[k + 1])));
     }
     // The opening has an even number of plies, so ply 0 here is White's.
     for (const c of ['w', 'b']) {
       const n = moves.filter((x, k) => (k % 2 === 0) === (c === 'w')).length;
       console.log(JSON.stringify({
-        level: levelArg, game: g, color: c, moves: n,
-        acpl: +S.acpl(cpLoss, c).toFixed(1), accuracy: +S.gameAccuracy(whiteWin, moves, c).toFixed(1),
-        result: E.status(s).result || 'maxlen',
+        level: side[c].name, opponent: side[c === 'w' ? 'b' : 'w'].name, game: g, color: c, moves: n,
+        acpl: S.acpl(cpLoss, c) === null ? null : +S.acpl(cpLoss, c).toFixed(1), accuracy: +S.gameAccuracy(whiteWin, moves, c).toFixed(1),
+        result: E.status(s).result || 'maxlen', scores,
       }));
     }
   }
-  ana.quit(); if (bot) bot.quit();
+  ana.quit();
+  for (const p of players) if (p.bot) p.bot.quit();
   process.exit(0);
 })();
