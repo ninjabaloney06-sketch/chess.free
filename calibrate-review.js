@@ -91,14 +91,15 @@ const uci = (m) => E.squareName(m.from) + E.squareName(m.to) + (m.promo || '');
     for (let k = 0; k + 1 < scores.length; k++) {
       const loss = Math.max(0, S.winPct(scores[k]) - S.winPct(-scores[k + 1]));
       moves.push({ acc: S.moveAccuracy(loss), counted: true });
-      cpLoss.push(Math.max(0, S.cpClamp(scores[k]) - S.cpClamp(-scores[k + 1])));
+      const decided = S.decided(S.winPct(scores[k]), S.winPct(-scores[k + 1]));
+      cpLoss.push(decided ? null : Math.max(0, S.cpClamp(scores[k]) - S.cpClamp(-scores[k + 1])));
     }
     // The opening has an even number of plies, so ply 0 here is White's.
     for (const c of ['w', 'b']) {
       const n = moves.filter((x, k) => (k % 2 === 0) === (c === 'w')).length;
       console.log(JSON.stringify({
         level: side[c].name, opponent: side[c === 'w' ? 'b' : 'w'].name, game: g, color: c, moves: n,
-        acpl: +S.acpl(cpLoss, c).toFixed(1), accuracy: +S.gameAccuracy(whiteWin, moves, c).toFixed(1),
+        acpl: S.acpl(cpLoss, c) === null ? null : +S.acpl(cpLoss, c).toFixed(1), accuracy: +S.gameAccuracy(whiteWin, moves, c).toFixed(1),
         result: E.status(s).result || 'maxlen', scores,
       }));
     }

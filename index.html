@@ -877,7 +877,7 @@
     else if (loss <= 20) c = 'mistake';
     else c = 'blunder';
     const cpLoss = Math.max(0, RS.cpClamp(a.score) - RS.cpClamp(-b.score));
-    return { c, loss, cpLoss, acc: c === 'book' ? 100 : RS.moveAccuracy(loss), counted: c !== 'book' };
+    return { c, loss, cpLoss, acc: c === 'book' ? 100 : RS.moveAccuracy(loss), counted: c !== 'book', decided: RS.decided(wpBefore, wpAfter) };
   }
 
   async function analysisFor(state, moves, urgent) {
@@ -1032,7 +1032,8 @@
     $('deepReview').disabled = review.deep;
     $('deepReview').textContent = review.deep || deepCached ? 'Deep review' : 'Deep review (≈99 MB download)';
     $('engineLabel').textContent = 'Engine: ' + engineLabel();
-    // Accuracy and estimated rating over the game's main line (book moves don't count)
+    // Accuracy and estimated rating over the game's main line (book moves don't count, nor do
+    // moves in already-decided positions for the rating)
     let lastWin = 50;
     const whiteWin = pos.map((st, k) => {
       const an = review.analysis[k];
@@ -1040,15 +1041,15 @@
       return lastWin;
     });
     const moves = pos.slice(1).map((_, k) => review.cls[k] || null);
-    const cpLoss = moves.map((m) => (m && m.counted ? m.cpLoss : null));
+    const cpLoss = moves.map((m) => (m && m.counted && !m.decided ? m.cpLoss : null));
     for (const c of ['w', 'b']) {
       const acc = RS.gameAccuracy(whiteWin, moves, c);
-      const counted = moves.filter((m, k) => m && m.counted && (k % 2 === 0) === (c === 'w')).length;
+      const counted = cpLoss.filter((x, k) => x !== null && (k % 2 === 0) === (c === 'w')).length;
       const elo = RS.estimateElo(RS.acpl(cpLoss, c), counted);
       $(c === 'w' ? 'accW' : 'accB').textContent = acc === null ? '–' : acc.toFixed(1);
       $(c === 'w' ? 'eloW' : 'eloB').textContent = elo === null ? '–' : '≈' + elo;
       $(c === 'w' ? 'eloW' : 'eloB').title = elo === null
-        ? `Needs at least ${RS.MIN_MOVES_FOR_ELO} non-book moves`
+        ? `Needs at least ${RS.MIN_MOVES_FOR_ELO} non-book moves before the game is decided`
         : `Average centipawn loss ${RS.acpl(cpLoss, c).toFixed(0)} over ${counted} moves`;
     }
     // Comment on the move that led to the viewed position, plus the engine's line from here

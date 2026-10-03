@@ -18,6 +18,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
   - Eval bar and evaluation graph
   - Accuracy for each player. Book moves don't count, and a few blunders pull it down hard instead of hiding behind many easy moves (roughly: no blunders ≈ 94, one ≈ 80–84, three ≈ 67–74)
   - **Rating estimate:** the rating each side played like in this game, from their average centipawn loss (see below)
+  - A move is only Great when it was the one good move *and* not an obvious one: getting out of check, recapturing, or finishing a trade (taking a piece worth at least as much as the capturer) count as Best
   - Every move labeled Brilliant, Great, Best, Excellent, Good, Book, Inaccuracy, Mistake, or Blunder
   - An arrow showing the best move whenever you missed it
   - Step through with ◀ ▶, the arrow keys, the move list, or the graph
@@ -35,7 +36,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
 | `stockfish/` | Stockfish 19 Lite (WebAssembly, GPLv3) and `stockfish-bundle.js`, the same engine packed into one script so it can start from `file://`. Rebuild the bundle with `node stockfish/make-bundle.js`. |
 | `stockfish/get-full-engine.js` | Optional: downloads the full Stockfish 19 for offline deep review (git-ignored) |
 | `review-stats.js` | Accuracy and rating-estimate formulas, shared by the page and `calibrate-review.js` |
-| `calibrate-review.js` | `node calibrate-review.js <level> <games> [analysisMs]` has a bot level play itself and prints each side's average centipawn loss and accuracy, to fit the rating estimate |
+| `calibrate-review.js` | `node calibrate-review.js <level>[:<level2>] <games> [analysisMs]` has a bot level play itself (or another level, swapping colors each game) and prints each side's average centipawn loss, accuracy and per-move scores, to fit the rating estimate |
 | `calibrate.js` | `node calibrate.js <level> <stockfishElo> <games> [refMs]` plays a bot level (built-in, or Stockfish.js via `{"engine":"sfjs",...}`) against native Stockfish with `UCI_LimitStrength` |
 
 ## Bot ratings
@@ -58,18 +59,21 @@ Each figure is accurate to about ±70–100 Elo. Stockfish's `UCI_Elo` cannot go
 
 ## Rating estimate
 
-Review estimates the rating each side played like from their average centipawn loss (ACPL): each non-book move's drop in evaluation, with evaluations capped at ±10 pawns so moves in already-decided positions don't swamp the average. The formula, rating ≈ 3200 × e^(−0.0134 × ACPL), was fitted to games between bots of the same level (8 games, 16 sides per level, Stockfish 19 Lite analysis at 0.1 s per position, games capped at 130 plies):
+Review estimates the rating each side played like from their average centipawn loss (ACPL): each non-book move's drop in evaluation, with evaluations capped at ±10 pawns. Moves made after the game is already decided (the mover's win chance stays above 95% or below 5% across the move) are left out, since the easy moves of a won ending or a forced mate would otherwise count as perfect play. It needs at least 8 counted moves.
 
-| Level | Measured rating | Average ACPL | Estimate |
+The formula, rating ≈ 3490 − 463 × ln(ACPL), is a least-squares fit of each side's true rating on its ACPL over 180 games between the bots (358 sides with enough moves): 10 games of each level against itself, plus mixed pairings 1000–1400, 1000–1600, 1200–1600, 1200–1800, 1400–1800, 1400–2000, 1600–2000, 1600–2200, 1800–2200 and 2000–2400 (Stockfish 19 Lite analysis at 0.25 s per position, games capped at 130 plies).
+
+The mixed pairings matter: a player who beats a much weaker opponent gets easy positions and a low ACPL. The previous formula, fitted only on bots playing their own level, rated the 1600 bot ≈2245 on average when it beat the 1000 bot. Fitting rating on ACPL, rather than ACPL on rating, also pulls single-game estimates toward the middle, which is the honest answer for so noisy a measure. The cost is that the scale is compressed: the averages run from about 1300 for the 1000 bot to about 2000 for the 2200 bot.
+
+| Level vs itself | Measured rating | Average ACPL | Average estimate |
 |---|---|---|---|
-| 1000 | 1000 | 85.9 | 1009 |
-| 1200 | 1250 | 74.9 | 1171 |
-| 1400 | 1410 | 57.2 | 1484 |
-| 1600 | 1565 | 49.2 | 1654 |
-| 1800 | 1825 | 41.2 | 1841 |
-| 2000 | 2070 | 34.0 | 2029 |
-| 2200 | 2210 | 25.9 | 2260 |
-| Stockfish `UCI_Elo` 2400 | 2310 | 28.8 | 2174 |
+| 1000 | 1000 | 116 | ≈ 1320 |
+| 1200 | 1250 | 86 | ≈ 1445 |
+| 1400 | 1410 | 70 | ≈ 1570 |
+| 1600 | 1565 | 55 | ≈ 1710 |
+| 1800 | 1825 | 46 | ≈ 1755 |
+| 2000 | 2070 | 34 | ≈ 1910 |
+| 2200 | 2210 | 29 | ≈ 1980 |
+| Stockfish `UCI_Elo` 2400 | 2310 | 38 | ≈ 1850 |
 
-Averaged over many games the estimate lands within about 100 of the true rating, but a single game swings a lot: in the calibration games a single side's estimate was off by 265 at the median and by 500 or more one time in five, since one quiet game or one blunder moves ACPL a long way. It needs at least 8 non-book moves. Like the bot ratings, it is on Stockfish's engine Elo scale, not an exact chess.com or FIDE equivalent.
-
+A single game still swings a lot: over the calibration games a side's estimate was off by 230 at the median (the previous formula: 300) and by 500 or more one time in eight (previously one in four). Like the bot ratings, it is on Stockfish's engine Elo scale, not an exact chess.com or FIDE equivalent.
