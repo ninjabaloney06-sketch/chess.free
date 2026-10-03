@@ -12,7 +12,8 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
 - Move by dragging (the piece follows your cursor) or by clicking a piece and then a square
 - Draw on the board like chess.com or lichess: hold Shift (or use the right mouse button) and click a square to mark it, or drag to draw an arrow. Do it again to remove one; a normal click or the next move clears them all
 - Resign (click twice to confirm), new game, undo, and board flip
-- Captured pieces for each side, with a +N showing who is ahead in material (pawn 1, knight and bishop 3, rook 5, queen 9)
+- Player bars above and below the board with each side's captured pieces and a +N showing who is ahead in material (pawn 1, knight and bishop 3, rook 5, queen 9)
+- **Import a game:** paste a PGN from chess.com or lichess and click *Review this game*. Player names and ratings come from the PGN; comments, variations and annotations in it are skipped
 - **Game review** powered by Stockfish 19 Lite at full strength (0.5 s per position, ≈3000+):
   - Eval bar and evaluation graph
   - Accuracy for each player. Book moves don't count, and a few blunders pull it down hard instead of hiding behind many easy moves (roughly: no blunders ≈ 94, one ≈ 80–84, three ≈ 67–74)
