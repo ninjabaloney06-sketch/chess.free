@@ -1,6 +1,6 @@
 // Packs the Stockfish worker script and its WASM into one plain script (stockfish-bundle.js)
 // so the page can start Stockfish even when opened straight from disk (file://), where
-// browsers refuse to load workers or fetch .wasm files. Run: node chess/stockfish/make-bundle.js
+// browsers refuse to load workers or fetch .wasm files. Run: node stockfish/make-bundle.js
 const fs = require('fs');
 const path = require('path');
 const dir = __dirname;

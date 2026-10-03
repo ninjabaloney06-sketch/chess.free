@@ -1,5 +1,5 @@
 // Measures a bot level's strength by playing it against Stockfish with UCI_LimitStrength.
-// Usage: node chess/calibrate.js <level> <stockfishElo> <games> [refMovetimeMs] [stockfishPath]
+// Usage: node calibrate.js <level> <stockfishElo> <games> [refMovetimeMs] [stockfishPath]
 //   <level> is a built-in level's Elo (e.g. 1800), a JSON built-in level ({"maxDepth":4,...}),
 //   or a JSON Stockfish.js config: {"engine":"sfjs","elo":2400} (strength-limited) or
 //   {"engine":"sfjs","movetime":500} (full strength).

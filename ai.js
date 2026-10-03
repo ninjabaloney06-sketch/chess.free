@@ -620,7 +620,7 @@ function chessAIModule(root) {
     return total;
   }
 
-  // Playing strength presets, calibrated against Stockfish's UCI_Elo (see chess/calibrate.js).
+  // Playing strength presets, calibrated against Stockfish's UCI_Elo (see calibrate.js).
   const LEVELS = [
     { elo: 1000, maxDepth: 1, noise: 90, timeMs: 5000 },
     { elo: 1200, maxDepth: 2, noise: 150, timeMs: 5000 },

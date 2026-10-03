@@ -1,4 +1,4 @@
-// Run with: node chess/test.js — verifies move generation against known perft counts.
+// Run with: node test.js — verifies move generation against known perft counts.
 const E = require('./engine.js');
 const cases = [
   [E.START_FEN, [20, 400, 8902, 197281]],

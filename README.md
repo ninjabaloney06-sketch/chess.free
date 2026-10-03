@@ -2,7 +2,7 @@
 
 A complete chess game on a stone board with hand-drawn black and white pieces. An optional piece set swaps the knights and rooks for unicorns and Eiffel Towers.
 
-**Play:** double-click `chess/index.html`. Everything runs locally on your computer's CPU, with no internet connection, server, or install needed. The bots and Stockfish run in background Web Workers built from files in this folder, so they work even when the page is opened straight from disk. Serving the folder over HTTP (for example `python3 -m http.server` inside `chess/`) also works.
+**Play:** double-click `index.html`. Everything runs locally on your computer's CPU, with no internet connection, server, or install needed. The bots and Stockfish run in background Web Workers built from files in this folder, so they work even when the page is opened straight from disk. Serving the folder over HTTP (for example `python3 -m http.server` in the repo folder) also works.
 
 ## Features
 
@@ -25,9 +25,9 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
 | `index.html` | The page: board, pieces, game flow, and review |
 | `engine.js` | Rules engine used by the page (legal moves, game end, notation) |
 | `ai.js` | Search engine for the bot and the review (alpha-beta with a transposition table, null-move pruning, late-move reductions, quiescence, and PeSTO evaluation). Also runs as a Web Worker. |
-| `test.js` | `node chess/test.js` checks both move generators against standard perft counts, plus game-end detection and the bot finding mates |
-| `stockfish/` | Stockfish 19 Lite (WebAssembly, GPLv3) and `stockfish-bundle.js`, the same engine packed into one script so it can start from `file://`. Rebuild the bundle with `node chess/stockfish/make-bundle.js`. |
-| `calibrate.js` | `node chess/calibrate.js <level> <stockfishElo> <games> [refMs]` plays a bot level (built-in, or Stockfish.js via `{"engine":"sfjs",...}`) against native Stockfish with `UCI_LimitStrength` |
+| `test.js` | `node test.js` checks both move generators against standard perft counts, plus game-end detection and the bot finding mates |
+| `stockfish/` | Stockfish 19 Lite (WebAssembly, GPLv3) and `stockfish-bundle.js`, the same engine packed into one script so it can start from `file://`. Rebuild the bundle with `node stockfish/make-bundle.js`. |
+| `calibrate.js` | `node calibrate.js <level> <stockfishElo> <games> [refMs]` plays a bot level (built-in, or Stockfish.js via `{"engine":"sfjs",...}`) against native Stockfish with `UCI_LimitStrength` |
 
 ## Bot ratings
 
