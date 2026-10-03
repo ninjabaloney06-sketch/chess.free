@@ -17,6 +17,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
   - An arrow showing the best move whenever you missed it
   - Step through with ◀ ▶, the arrow keys, the move list, or the graph
   - **Variations:** play any move on the board during review to branch off. Variations appear indented in the move list, and each move gets its own label, evaluation, and best line from Stockfish. Click × to delete a variation.
+  - **Deep review:** click *Deep review* to re-analyze the game with the full Stockfish 19 (the big-network build, about 99 MB) at 1.5 s per position. It is too big to ship in the repo, so the first deep review downloads it from the npm CDN (unpkg.com), which needs an internet connection. After that the browser usually caches it. For offline deep review, run `node stockfish/get-full-engine.js` once and serve the folder over HTTP: the page then uses that local copy. If the engine can't be loaded, the page says so and shows the normal review. The full engine is somewhat stronger than Lite at the same time per move, but both are far beyond human strength, so most move labels won't change.
 
 ## Files
 
@@ -27,6 +28,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
 | `ai.js` | Search engine for the bot and the review (alpha-beta with a transposition table, null-move pruning, late-move reductions, quiescence, and PeSTO evaluation). Also runs as a Web Worker. |
 | `test.js` | `node test.js` checks both move generators against standard perft counts, plus game-end detection and the bot finding mates |
 | `stockfish/` | Stockfish 19 Lite (WebAssembly, GPLv3) and `stockfish-bundle.js`, the same engine packed into one script so it can start from `file://`. Rebuild the bundle with `node stockfish/make-bundle.js`. |
+| `stockfish/get-full-engine.js` | Optional: downloads the full Stockfish 19 for offline deep review (git-ignored) |
 | `calibrate.js` | `node calibrate.js <level> <stockfishElo> <games> [refMs]` plays a bot level (built-in, or Stockfish.js via `{"engine":"sfjs",...}`) against native Stockfish with `UCI_LimitStrength` |
 
 ## Bot ratings

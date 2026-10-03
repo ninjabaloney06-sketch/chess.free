@@ -176,7 +176,10 @@
         <button id="navNext" title="Next (→)">▶</button><button id="navLast" title="End">⏭</button>
       </div>
       <div class="counts" id="counts"></div>
-      <div class="row" style="margin-top:12px"><button id="exitReview">Exit review</button></div>
+      <div class="row" style="margin-top:12px">
+        <button id="deepReview" title="Re-analyze with the full Stockfish 19 at 1.5 s per position. Downloads about 99 MB the first time.">Deep review</button>
+        <button id="exitReview">Exit review</button>
+      </div>
     </div>
 
     <div class="card">
@@ -400,20 +403,40 @@
     }
   }
 
+  // Full Stockfish 19 for deep review: ~99 MB, too big to ship in the repo, so it is downloaded on
+  // demand. A copy in stockfish/ (from `node stockfish/get-full-engine.js`) is used first when the
+  // page is served over HTTP; otherwise it comes from the npm CDN. The browser caches the download.
+  const FULL_SF = 'stockfish-19-single';
+  const FULL_SF_CDN = 'https://unpkg.com/stockfish@19.0.0/bin/';
+
   class StockfishEngine {
-    constructor() { this.queue = []; this.job = null; this.ready = null; this.name = 'Stockfish 19 Lite'; }
+    constructor(name, sources, timeoutMs) {
+      this.queue = []; this.job = null; this.ready = null; this.name = name;
+      this.sources = sources; this.timeoutMs = timeoutMs; this.progress = null; this.onProgress = null;
+    }
     load() {
       if (!this.ready) {
-        const http = location.protocol.startsWith('http');
-        this.ready = (http ? this.boot('direct').catch(() => this.boot('bundle')) : this.boot('bundle')).then(() => true, () => false);
+        this.ready = this.sources().reduce((p, src) => p.catch(() => this.boot(src)), Promise.reject())
+          .then(() => true, () => { this.ready = null; return false; });
       }
       return this.ready;
     }
-    async boot(kind) {
-      if (this.w) this.w.terminate();
+    async boot(src) {
+      if (this.w) { this.w.terminate(); this.w = null; }
       let w;
-      if (kind === 'direct') w = new Worker('stockfish/stockfish-19-lite-single.js');
-      else {
+      if (src.direct) w = new Worker(src.direct);
+      else if (src.js) {
+        // Fetch the script and run it from a blob so it can come from another origin or from file://.
+        // Its WASM URL goes after the '#'; the script fetches it itself and reports download progress.
+        const js = new URL(src.js, location.href).href, wasm = new URL(src.wasm, location.href).href;
+        if (src.probe && !(await fetch(wasm, { method: 'HEAD' })).ok) throw new Error('not found: ' + wasm);
+        const res = await fetch(js);
+        if (!res.ok) throw new Error('HTTP ' + res.status + ' for ' + js);
+        w = new Worker(URL.createObjectURL(new Blob([await res.text()], { type: 'text/javascript' })) + '#' + encodeURIComponent(wasm));
+        const ch = new MessageChannel();
+        ch.port1.onmessage = (e) => { this.progress = e.data; if (this.onProgress) this.onProgress(e.data); };
+        w.postMessage({ progressPort: ch.port2 }, [ch.port2]);
+      } else {
         if (!window.STOCKFISH_BUNDLE) await loadScript('stockfish/stockfish-bundle.js');
         const b = window.STOCKFISH_BUNDLE;
         // Hand the worker its WASM from memory: from file:// it may not fetch anything.
@@ -423,18 +446,20 @@
         w = new Worker(URL.createObjectURL(new Blob([shim + b.js], { type: 'text/javascript' })) + '#stockfish.wasm');
       }
       this.w = w;
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Stockfish did not start')), 20000);
-        w.onerror = (e) => { if (e.preventDefault) e.preventDefault(); clearTimeout(timer); reject(e); };
-        w.onmessage = (e) => {
-          if (String(e.data) !== 'uciok') return;
-          clearTimeout(timer);
-          w.onmessage = (ev) => this.onLine(String(ev.data));
-          this.send('setoption name Hash value 32');
-          resolve();
-        };
-        w.postMessage('uci');
-      });
+      try {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('Stockfish did not start')), this.timeoutMs);
+          w.onerror = (e) => { if (e.preventDefault) e.preventDefault(); clearTimeout(timer); reject(e); };
+          w.onmessage = (e) => {
+            if (String(e.data) !== 'uciok') return;
+            clearTimeout(timer);
+            w.onmessage = (ev) => this.onLine(String(ev.data));
+            this.send(`setoption name Hash value ${src.hash || 32}`);
+            resolve();
+          };
+          w.postMessage('uci');
+        });
+      } catch (e) { w.terminate(); this.w = null; throw e; }
     }
     send(s) { this.w.postMessage(s); }
     request(job, urgent) {
@@ -484,12 +509,19 @@
   }
 
   const builtin = new BuiltinEngine();
-  const stockfish = new StockfishEngine();
+  const http = location.protocol.startsWith('http');
+  const stockfish = new StockfishEngine('Stockfish 19 Lite',
+    () => (http ? [{ direct: 'stockfish/stockfish-19-lite-single.js' }, {}] : [{}]), 20000);
+  const deepStockfish = new StockfishEngine('Stockfish 19',
+    () => (http ? [{ js: `stockfish/${FULL_SF}.js`, wasm: `stockfish/${FULL_SF}.wasm`, probe: true, hash: 128 }] : [])
+      .concat([{ js: FULL_SF_CDN + FULL_SF + '.js', wasm: FULL_SF_CDN + FULL_SF + '.wasm', hash: 128 }]), 15 * 60000);
+  deepStockfish.onProgress = () => { if (review && review.loading) renderReview(); };
   let gen = 0, sfOk = null;
   stockfish.load().then((ok) => { sfOk = ok; render(); });
-  function cancelEngine() { gen++; builtin.cancel(); if (sfOk) stockfish.cancel(); }
+  function cancelEngine() { gen++; builtin.cancel(); if (sfOk) stockfish.cancel(); if (deepStockfish.w) deepStockfish.cancel(); }
 
   const REVIEW_MS = 500; // Stockfish per position in review (built-in fallback: 900 ms)
+  const DEEP_REVIEW_MS = 1500; // full Stockfish per position in deep review
   const LEVELS = AI.LEVELS.concat([
     // Stockfish Lite's Elo limiter reads about 140 low, so 2540 here plays at 2400 (measured; see README).
     { elo: 2400, engine: 'stockfish', uciElo: 2540, movetime: 500, fallback: { maxDepth: 64, timeMs: 1500 } },
@@ -509,14 +541,16 @@
   async function analyze(moves, urgent) {
     const g = gen;
     let r = null;
-    if (await stockfish.load()) r = await stockfish.request({ moves, movetime: REVIEW_MS, multipv: 2 }, urgent);
+    if (review && review.deep && await deepStockfish.load()) r = await deepStockfish.request({ moves, movetime: DEEP_REVIEW_MS, multipv: 2 }, urgent);
+    else if (await stockfish.load()) r = await stockfish.request({ moves, movetime: REVIEW_MS, multipv: 2 }, urgent);
     else {
       const t = await builtin.think({ fen: E.START_FEN, moves, timeMs: 900, window: 250 });
       if (t) r = { best: t.best, score: t.bestScore, second: t.lines[1] ? t.lines[1].score : null, pv: [t.best] };
     }
     return g === gen ? r : null;
   }
-  const engineLabel = () => (sfOk === null ? 'Loading Stockfish…' : sfOk ? 'Stockfish 19 Lite, running on your device' : 'Built-in engine (Stockfish could not start)');
+  const engineLabel = () => (review && review.deep ? `Stockfish 19 (full), ${DEEP_REVIEW_MS / 1000} s per position, running on your device`
+    : sfOk === null ? 'Loading Stockfish…' : sfOk ? 'Stockfish 19 Lite, running on your device' : 'Built-in engine (Stockfish could not start)');
 
   // ---- State ----
   const $ = (id) => document.getElementById(id);
@@ -695,15 +729,30 @@
     return analyze(moves, urgent);
   }
 
-  async function startReview() {
+  // Deep review re-analyzes the game with the full Stockfish 19, downloading it first if needed.
+  let deepError = '';
+  async function startReview(deep) {
     if (!history.length) return;
+    deep = deep === true;
     cancelEngine();
     thinking = false; selected = null;
     closeModal('endModal');
     const pos = positions();
-    review = { cur: { line: -1, k: pos.length - 1 }, analysis: new Array(pos.length), cls: [], done: 0, lines: [] };
+    const cur = review ? review.cur : { line: -1, k: pos.length - 1 };
+    review = { cur: { line: -1, k: cur.line < 0 ? cur.k : pos.length - 1 }, analysis: new Array(pos.length), cls: [], done: 0, lines: [], deep, loading: deep };
     const myReview = review;
+    deepError = '';
     render();
+    if (deep) {
+      const ok = await deepStockfish.load();
+      if (review !== myReview) return;
+      review.loading = false;
+      if (!ok) {
+        deepError = 'Deep review needs an internet connection to download the full engine (about 99 MB), or a local copy (see README). Showing the normal review instead.';
+        review.deep = false;
+      }
+      render();
+    }
     for (let i = 0; i < pos.length; i++) {
       if (review !== myReview) return;
       if (!review.analysis[i]) {
@@ -813,9 +862,15 @@
   function renderReview() {
     const pos = positions(), n = pos.length, node = curNode();
     $('reviewProgress').style.width = (100 * review.done / n) + '%';
-    $('reviewProgressText').textContent = review.done < n
-      ? `Analyzing… ${review.done}/${n} positions`
-      : `Analyzed ${n - 1} moves. Play moves on the board to explore variations.`;
+    const p = deepStockfish.progress;
+    $('reviewProgressText').textContent = review.loading
+      ? (p ? `Downloading full Stockfish… ${Math.floor(100 * p.percent)}% of ${Math.round(p.total / 1e6)} MB${p.etaText ? ', ' + p.etaText + ' left' : ''}`
+        : 'Starting full Stockfish…')
+      : (deepError ? deepError + ' ' : '') + (review.done < n
+        ? `Analyzing… ${review.done}/${n} positions`
+        : `Analyzed ${n - 1} moves. Play moves on the board to explore variations.`);
+    $('deepReview').disabled = review.deep;
+    $('deepReview').textContent = review.deep ? 'Deep review' : 'Deep review (≈99 MB)';
     $('engineLabel').textContent = 'Engine: ' + engineLabel();
     for (const c of ['w', 'b']) {
       const accs = review.cls.filter((x, i) => x && (i % 2 === 0) === (c === 'w')).map((x) => x.acc);
@@ -1017,6 +1072,7 @@
   $('endReview').onclick = startReview;
   $('reviewBtn').onclick = startReview;
   $('exitReview').onclick = exitReview;
+  $('deepReview').onclick = () => startReview(true);
   $('undo').onclick = undo;
   $('resign').onclick = resign;
   $('flip').onclick = () => { flipped = !flipped; render(); };
