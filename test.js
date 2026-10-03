@@ -53,5 +53,30 @@ for (const level of AI.LEVELS) {
   if (!E.legalMoves(E.makeMove(E.newGame(), E.legalMoves(E.newGame()).find((m) => E.squareName(m.to) === 'e4')))
     .some((m) => E.squareName(m.from) + E.squareName(m.to) === r.move)) { ok = false; console.log('FAIL level', level.elo, r.move); }
 }
+// PGN import: a chess.com export, and lichess-style comments, variations and annotations
+const pgn = `[Event "Live Chess"]
+[White "notmagnussquared"]
+[Black "ehabou"]
+[Result "0-1"]
+[CurrentPosition "8/p7/2p3p1/1pP3p1/1P3k2/PK5p/8/8 w - - 0 47"]
+
+1. d4 e5 2. c4 exd4 3. Qxd4 Nc6 4. Qd1 Bb4+ 5. Nc3 Qe7 6. Bd2 Nf6 7. Nf3 d6 8.
+a3 Bxc3 9. Bxc3 Ne5 10. Bxe5 dxe5 11. e4 Nxe4 12. Bd3 Nc5 13. Bc2 e4 14. Nd2 e3
+15. Nf3 exf2+ 16. Kxf2 O-O 17. Re1 Qf6 18. b4 Na6 19. c5 Bg4 20. h3 Bh5 21. g4
+Bg6 22. Bxg6 fxg6 23. Kg2 Qb2+ 24. Re2 Qf6 25. Rf2 c6 26. Rc1 Nc7 27. Rc4 Nd5
+28. Re4 Nf4+ 29. Kg3 g5 30. Rxf4 Qxf4+ 31. Kg2 Rad8 32. Qe1 Rd3 33. Qe2 Rxf3 34.
+Rxf3 Qxf3+ 35. Qxf3 Rxf3 36. Kxf3 Kf7 37. Ke4 Ke6 38. Kd4 b6 39. Ke4 b5 40. Kd4
+g6 41. Ke4 Kf6 42. Kf3 h5 43. Ke3 hxg4 44. Kd3 Ke5 45. Kc3 Kf4 46. Kb3 gxh3 0-1`;
+const imp = E.parsePGN(pgn);
+let ps = E.newGame();
+for (const m of imp.moves) ps = E.makeMove(ps, m);
+if (imp.moves.length !== 92 || E.toFEN(ps).split(' ')[0] !== '8/p7/2p3p1/1pP3p1/1P3k2/PK5p/8/8' || imp.tags.Black !== 'ehabou') {
+  ok = false; console.log('FAIL pgn chess.com', imp.moves.length, E.toFEN(ps));
+}
+const imp2 = E.parsePGN('1. e4 { [%clk 0:01:00] } 1... e5 (1... c5 2. Nf3) 2. Nf3?! $6 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. 0-0 *');
+if (imp2.moves.length !== 9 || !imp2.moves[8].castle) { ok = false; console.log('FAIL pgn lichess', imp2.moves.length); }
+let threw = false;
+try { E.parsePGN('1. e4 e5 2. Ke3'); } catch (e) { threw = /2\. Ke3/.test(e.message); }
+if (!threw) { ok = false; console.log('FAIL pgn illegal move'); }
 console.log(ok ? 'ALL TESTS PASSED' : 'SOME TESTS FAILED');
 process.exit(ok ? 0 : 1);

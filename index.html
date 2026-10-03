@@ -77,6 +77,12 @@
   .sq.light .coord { color: var(--coord-light); } .sq.dark .coord { color: var(--coord-dark); }
   .badge { position: absolute; top: 2%; right: 2%; width: 36%; height: 36%; z-index: 4; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
   .arrows { position: absolute; inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); pointer-events: none; z-index: 3; }
+  .board, .board * { -webkit-user-drag: none; -webkit-touch-callout: none; }
+  .sq.marked::before { content: ""; position: absolute; inset: 0; background: rgba(235, 97, 80, .8); }
+  .sq.drag-src > svg.piece { opacity: .3; }
+  .sq.drag-over { box-shadow: inset 0 0 0 4px rgba(255, 255, 255, .65); }
+  .drag-ghost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; will-change: transform; filter: drop-shadow(2px 6px 4px rgba(0, 0, 0, .45)); }
+  .drag-ghost > svg { width: 100%; height: 100%; display: block; }
 
   /* Side panel */
   .side { width: min(100%, 360px); display: flex; flex-direction: column; gap: 12px; }
@@ -94,9 +100,14 @@
   button.danger.armed { background: var(--danger); color: #fff; border-color: transparent; }
   button:disabled { opacity: .45; cursor: default; }
   label { font-size: .9rem; }
-  .captured { min-height: 28px; display: flex; flex-wrap: wrap; align-items: center; }
-  .captured svg { width: 26px; height: 26px; margin-right: -6px; }
-  .captured .lead { margin-left: 12px; font-size: .9rem; font-weight: 600; color: var(--muted); }
+  .player { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 4px 0; min-width: 0; }
+  .player .pname { font-weight: 600; font-size: .92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .captured { display: flex; align-items: center; min-width: 0; }
+  .captured svg { width: 22px; height: 22px; margin-right: -7px; flex: none; }
+  .captured .lead { margin-left: 12px; font-size: .85rem; font-weight: 600; color: var(--muted); }
+  textarea { width: 100%; min-height: 90px; resize: vertical; font: .8rem ui-monospace, Menlo, Consolas, monospace; padding: 8px;
+    border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); margin-bottom: 8px; }
+  .err { color: var(--danger); font-size: .85rem; margin: 0 0 8px; }
   .moves { max-height: 300px; overflow-y: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9rem;
     display: grid; grid-template-columns: 34px 1fr 1fr; row-gap: 2px; }
   .moves .n { color: var(--muted); padding-top: 2px; }
@@ -154,10 +165,12 @@
     <h1>Stone Chess</h1>
     <p class="sub">Play a friend or a computer opponent rated 1000 to 2400, then review your game with Stockfish. Everything runs on your device.</p>
     <div class="status" id="status"></div>
+    <div class="player" id="plTop"></div>
     <div class="board-row">
       <div class="evalbar" id="evalbar"><div class="fill" id="evalfill"></div><span class="num" id="evalnum"></span></div>
       <div class="board" id="board" aria-label="Chess board"></div>
     </div>
+    <div class="player" id="plBottom"></div>
   </div>
 
   <div class="side">
@@ -169,6 +182,8 @@
       <div class="acc">
         <div><b id="accW">–</b><span>White accuracy</span></div>
         <div><b id="accB">–</b><span>Black accuracy</span></div>
+        <div><b id="eloW">–</b><span>White played like</span></div>
+        <div><b id="eloB">–</b><span>Black played like</span></div>
       </div>
       <div class="comment" id="comment"></div>
       <svg class="graph" id="graph" viewBox="0 0 300 64" preserveAspectRatio="none"></svg>
@@ -209,10 +224,10 @@
     </div>
 
     <div class="card">
-      <h2>Captured by White</h2>
-      <div class="captured" id="capW"></div>
-      <h2 style="margin-top:10px">Captured by Black</h2>
-      <div class="captured" id="capB"></div>
+      <h2>Import game</h2>
+      <textarea id="pgnInput" spellcheck="false" placeholder="Paste a PGN from chess.com or lichess"></textarea>
+      <p class="err" id="pgnError" hidden></p>
+      <button class="primary" id="pgnReview">Review this game</button>
     </div>
 
     <div class="card">
@@ -244,6 +259,7 @@
 
 <script src="engine.js"></script>
 <script src="ai.js"></script>
+<script src="review-stats.js"></script>
 <script>
 (function () {
   'use strict';
@@ -614,6 +630,7 @@
   levelEl.value = '2';
   let game, history, sans, ucis, selected, flipped = false, thinking = false, endShown = false, pendingPromo = null, resigned = null;
   let review = null;
+  let imported = null; // PGN header tags of an imported game
 
   const positions = () => history.concat([game]);
   const aiColor = () => (modeEl.value === 'ai-b' ? 'b' : modeEl.value === 'ai-w' ? 'w' : null);
@@ -628,7 +645,7 @@
     thinking = false;
     game = E.newGame();
     history = []; sans = []; ucis = [];
-    selected = null; endShown = false; resigned = null; review = null;
+    selected = null; endShown = false; resigned = null; review = null; imported = null;
     closeModal('endModal'); closeModal('promoModal');
     flipped = modeEl.value === 'ai-w';
     render();
@@ -696,27 +713,102 @@
   const legalTo = (from, to) => E.legalMoves(boardState()).filter((m) => m.from === from && m.to === to);
   function commit(m) { if (review) reviewMove(m); else doMove(m); }
   function play(options) { if (options.length > 1) openPromo(options); else commit(options[0]); }
-  let dragFrom = null, deselectOnUp = false;
+  // Drag: the piece follows the pointer in a floating ghost that lives outside the board, so re-renders don't drop it.
+  // Annotations: Shift + click (or right-click) marks a square, Shift + drag (or right-drag) draws an arrow.
+  let drag = null, deselectOnUp = false, ann = null;
+  const marks = { view: null, arrows: [], squares: [] };
+  const USER_ARROW = 'rgba(255, 170, 0, .8)';
+  const squareAt = (x, y) => { const el = document.elementFromPoint(x, y); const sq = el && el.closest('#board .sq'); return sq ? +sq.dataset.i : null; };
+  const sqEl = (i) => boardEl.querySelector(`.sq[data-i="${i}"]`);
+  function moveGhost(x, y) {
+    if (drag && drag.ghost) drag.ghost.style.transform = `translate(${x - drag.size / 2}px, ${y - drag.size / 2}px)`;
+  }
+  function setDragOver(i) {
+    if (drag.over === i) return;
+    if (drag.over !== null) { const el = sqEl(drag.over); if (el) el.classList.remove('drag-over'); }
+    drag.over = i;
+    if (i !== null && i !== drag.from) { const el = sqEl(i); if (el) el.classList.add('drag-over'); }
+  }
+  function endDrag() {
+    if (!drag) return;
+    if (drag.ghost) drag.ghost.remove();
+    drag = null;
+  }
+  function drawAnnPreview() {
+    const old = boardEl.querySelector('.arrows.preview');
+    if (old) old.remove();
+    if (ann && ann.to !== null && ann.to !== ann.from) boardEl.insertAdjacentHTML('beforeend', arrowSVG(ann.from, ann.to, USER_ARROW, 'preview'));
+  }
+  function clearMarks() {
+    if (!marks.arrows.length && !marks.squares.length) return false;
+    marks.arrows = []; marks.squares = [];
+    return true;
+  }
+
+  boardEl.addEventListener('contextmenu', (e) => e.preventDefault());
+  boardEl.addEventListener('dragstart', (e) => e.preventDefault());
+  boardEl.addEventListener('mousedown', (e) => e.preventDefault()); // Shift+click would otherwise select page text
   boardEl.addEventListener('pointerdown', (e) => {
-    const sqEl = e.target.closest('.sq');
-    if (!sqEl || !canMove()) return;
-    const st = boardState();
-    const i = +sqEl.dataset.i, p = st.board[i];
-    dragFrom = null;
-    if (selected !== null && legalTo(selected, i).length) play(legalTo(selected, i));
-    else if (p && p.c === st.turn) { deselectOnUp = selected === i; selected = i; dragFrom = i; render(); }
-    else { selected = null; render(); }
+    const i = squareAt(e.clientX, e.clientY);
+    if (i === null) return;
+    e.preventDefault(); // no native text selection or image drag
+    if (drag || ann) return;
+    if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
+      ann = { from: i, to: i, id: e.pointerId };
+      boardEl.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (e.button !== 0) return;
+    const cleared = clearMarks();
+    if (!canMove()) { if (cleared) render(); return; }
+    const st = boardState(), p = st.board[i];
+    if (selected !== null && legalTo(selected, i).length) { play(legalTo(selected, i)); return; }
+    if (p && p.c === st.turn) {
+      deselectOnUp = selected === i; selected = i;
+      const size = sqEl(i).getBoundingClientRect().width;
+      const ghost = document.createElement('div');
+      ghost.className = 'drag-ghost';
+      ghost.style.width = ghost.style.height = size + 'px';
+      ghost.innerHTML = pieceSVG(p.t, p.c);
+      document.body.appendChild(ghost);
+      drag = { from: i, id: e.pointerId, ghost, size, over: null };
+      moveGhost(e.clientX, e.clientY);
+      boardEl.setPointerCapture(e.pointerId);
+      render();
+      setDragOver(i);
+    } else { selected = null; render(); }
+  });
+  boardEl.addEventListener('pointermove', (e) => {
+    if (drag && e.pointerId === drag.id) {
+      moveGhost(e.clientX, e.clientY);
+      setDragOver(squareAt(e.clientX, e.clientY));
+    } else if (ann && e.pointerId === ann.id) {
+      const i = squareAt(e.clientX, e.clientY);
+      if (i !== ann.to) { ann.to = i; drawAnnPreview(); }
+    }
   });
   boardEl.addEventListener('pointerup', (e) => {
-    if (dragFrom === null) return;
-    const from = dragFrom; dragFrom = null;
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const sqEl = el && el.closest('.sq');
-    if (!sqEl) return;
-    const i = +sqEl.dataset.i;
-    if (i === from) { if (deselectOnUp) { selected = null; render(); } }
-    else if (legalTo(from, i).length) play(legalTo(from, i));
+    if (ann && e.pointerId === ann.id) {
+      const { from } = ann, to = squareAt(e.clientX, e.clientY);
+      ann = null;
+      if (to === from) {
+        const k = marks.squares.indexOf(from);
+        if (k >= 0) marks.squares.splice(k, 1); else marks.squares.push(from);
+      } else if (to !== null) {
+        const k = marks.arrows.findIndex((a) => a.from === from && a.to === to);
+        if (k >= 0) marks.arrows.splice(k, 1); else marks.arrows.push({ from, to });
+      }
+      render();
+      return;
+    }
+    if (!drag || e.pointerId !== drag.id) return;
+    const from = drag.from, i = squareAt(e.clientX, e.clientY);
+    endDrag();
+    if (i === from) { if (deselectOnUp) selected = null; render(); }
+    else if (i !== null && canMove() && legalTo(from, i).length) play(legalTo(from, i));
+    else render(); // dropped off the board or on an illegal square: snap back, keep the piece selected
   });
+  boardEl.addEventListener('pointercancel', () => { ann = null; endDrag(); render(); });
 
   function openPromo(options) {
     pendingPromo = options;
@@ -734,8 +826,7 @@
   function closeModal(id) { $(id).classList.remove('open'); }
 
   // ---- Review ----
-  const winPct = (cp) => (cp >= AI.MATE_BOUND ? 100 : cp <= -AI.MATE_BOUND ? 0 : 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1));
-  const moveAccuracy = (loss) => Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * loss) - 3.1669));
+  const RS = window.ReviewStats, winPct = RS.winPct;
   function fmtEval(cp) { // cp from White's view
     if (Math.abs(cp) >= AI.MATE_BOUND) { const n = Math.ceil((MATE - Math.abs(cp)) / 2); return (cp > 0 ? '' : '-') + 'M' + n; }
     return (cp > 0 ? '+' : '') + (cp / 100).toFixed(1);
@@ -774,7 +865,8 @@
     else if (loss <= 10) c = 'inaccuracy';
     else if (loss <= 20) c = 'mistake';
     else c = 'blunder';
-    return { c, loss, acc: c === 'book' ? 100 : moveAccuracy(loss) };
+    const cpLoss = Math.max(0, RS.cpClamp(a.score) - RS.cpClamp(-b.score));
+    return { c, loss, cpLoss, acc: c === 'book' ? 100 : RS.moveAccuracy(loss), counted: c !== 'book' };
   }
 
   async function analysisFor(state, moves, urgent) {
@@ -929,9 +1021,24 @@
     $('deepReview').disabled = review.deep;
     $('deepReview').textContent = review.deep || deepCached ? 'Deep review' : 'Deep review (≈99 MB download)';
     $('engineLabel').textContent = 'Engine: ' + engineLabel();
+    // Accuracy and estimated rating over the game's main line (book moves don't count)
+    let lastWin = 50;
+    const whiteWin = pos.map((st, k) => {
+      const an = review.analysis[k];
+      if (an) lastWin = winPct(st.turn === 'w' ? an.score : -an.score);
+      return lastWin;
+    });
+    const moves = pos.slice(1).map((_, k) => review.cls[k] || null);
+    const cpLoss = moves.map((m) => (m && m.counted ? m.cpLoss : null));
     for (const c of ['w', 'b']) {
-      const accs = review.cls.filter((x, i) => x && (i % 2 === 0) === (c === 'w')).map((x) => x.acc);
-      $(c === 'w' ? 'accW' : 'accB').textContent = accs.length ? (accs.reduce((a, b) => a + b, 0) / accs.length).toFixed(1) : '–';
+      const acc = RS.gameAccuracy(whiteWin, moves, c);
+      const counted = moves.filter((m, k) => m && m.counted && (k % 2 === 0) === (c === 'w')).length;
+      const elo = RS.estimateElo(RS.acpl(cpLoss, c), counted);
+      $(c === 'w' ? 'accW' : 'accB').textContent = acc === null ? '–' : acc.toFixed(1);
+      $(c === 'w' ? 'eloW' : 'eloB').textContent = elo === null ? '–' : '≈' + elo;
+      $(c === 'w' ? 'eloW' : 'eloB').title = elo === null
+        ? `Needs at least ${RS.MIN_MOVES_FOR_ELO} non-book moves`
+        : `Average centipawn loss ${RS.acpl(cpLoss, c).toFixed(0)} over ${counted} moves`;
     }
     // Comment on the move that led to the viewed position, plus the engine's line from here
     const cm = $('comment'), a = node.analysis, mv = node.move;
@@ -1006,6 +1113,7 @@
     const last = view.lastMove;
     const kingInCheck = E.inCheck(view) ? view.board.findIndex((p) => p && p.t === 'k' && p.c === view.turn) : -1;
     const badge = node && node.move && node.move.cls ? node.move.cls.c : null;
+    if (marks.view !== view) { marks.view = view; marks.arrows = []; marks.squares = []; }
 
     boardEl.innerHTML = '';
     for (let v = 0; v < 64; v++) {
@@ -1017,6 +1125,9 @@
       d.style.backgroundPosition = `${-((i * 97) % 170)}px ${-((i * 61) % 170)}px`;
       if (last && (last.from === i || last.to === i)) d.classList.add('last');
       if (selected === i) d.classList.add('sel');
+      if (marks.squares.includes(i)) d.classList.add('marked');
+      if (drag && drag.from === i) d.classList.add('drag-src');
+      if (drag && drag.over === i && i !== drag.from) d.classList.add('drag-over');
       if (kingInCheck === i) d.classList.add('check');
       const target = legal.find((m) => m.to === i);
       if (target) d.classList.add('target', view.board[i] || target.enPassant ? 'capture' : 'quiet');
@@ -1036,6 +1147,8 @@
       const bm = best && findUci(node.move.prevState, best);
       if (bm) boardEl.insertAdjacentHTML('beforeend', arrowSVG(bm.from, bm.to));
     }
+    for (const a of marks.arrows) boardEl.insertAdjacentHTML('beforeend', arrowSVG(a.from, a.to, USER_ARROW));
+    drawAnnPreview();
 
     // Status line
     const gs = gameStatus();
@@ -1046,6 +1159,7 @@
       else if (gs.result === 'resign') msg = `${NAMES[other(gs.winner)]} resigned. ${NAMES[gs.winner]} wins`;
       else msg = `Draw by ${drawReason(gs.result)}`;
     } else if (thinking) msg = `Computer (${LEVELS[+levelEl.value].elo}) is thinking…`;
+    else if (imported) msg = `Imported game${imported.Result && imported.Result !== '*' ? ' · ' + imported.Result : ''}${imported.Termination ? ' · ' + imported.Termination : ''}`;
     else msg = `${NAMES[game.turn]} to move${gs.check ? ', check!' : ''}`;
     const sw = review ? view.turn : gs.over && gs.winner ? gs.winner : game.turn;
     statusEl.innerHTML = `<span class="swatch ${sw}"></span>${msg}`;
@@ -1058,11 +1172,12 @@
     // Material lead from the pieces on the board, so promotions count too
     const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
     const lead = view.board.reduce((s, p) => s + (p ? (p.c === 'w' ? 1 : -1) * VAL[p.t] : 0), 0);
+    // Player strips above and below the board, each with the pieces that side has captured
     for (const c of ['w', 'b']) {
       caps[c].sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t));
       const ahead = c === 'w' ? lead : -lead;
-      $(c === 'w' ? 'capW' : 'capB').innerHTML = caps[c].map((p) => pieceSVG(p.t, p.c, '')).join('') +
-        (ahead > 0 ? `<span class="lead">+${ahead}</span>` : '');
+      $((c === 'w') !== flipped ? 'plBottom' : 'plTop').innerHTML = `<span class="swatch ${c}"></span><span class="pname">${esc(playerName(c))}</span>` +
+        `<span class="captured">${caps[c].map((p) => pieceSVG(p.t, p.c, '')).join('')}${ahead > 0 ? `<span class="lead">+${ahead}</span>` : ''}</span>`;
     }
 
     // Move list, with review variations under the move they branch from
@@ -1106,7 +1221,34 @@
     }
   }
 
-  function arrowSVG(from, to) {
+  const esc = (t) => t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+  function playerName(c) {
+    if (imported) {
+      const n = imported[c === 'w' ? 'White' : 'Black'], elo = imported[c === 'w' ? 'WhiteElo' : 'BlackElo'];
+      return (n && n !== '?' ? n : NAMES[c]) + (elo && elo !== '?' ? ` (${elo})` : '');
+    }
+    if (!aiColor()) return NAMES[c];
+    return c === aiColor() ? `Computer (${LEVELS[+levelEl.value].elo})` : 'You';
+  }
+
+  // Load a pasted PGN as the current game and review it
+  function importPGN() {
+    const errEl = $('pgnError');
+    let parsed;
+    try { parsed = E.parsePGN($('pgnInput').value); } catch (e) { errEl.textContent = e.message; errEl.hidden = false; return; }
+    errEl.hidden = true;
+    modeEl.value = 'human';
+    newGame();
+    for (const m of parsed.moves) {
+      sans.push(E.san(game, m)); ucis.push(uciOf(m)); history.push(game);
+      game = E.makeMove(game, m);
+    }
+    imported = parsed.tags;
+    endShown = true;
+    startReview();
+  }
+
+  function arrowSVG(from, to, color = 'rgba(129,182,76,.85)', cls = '') {
     const xy = (i) => { const v = flipped ? 63 - i : i; return [(v % 8) + 0.5, Math.floor(v / 8) + 0.5]; };
     const [x1, y1] = xy(from), [x2, y2] = xy(to);
     const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
@@ -1115,7 +1257,7 @@
       [x1 + uy * w, y1 - ux * w], [hx + uy * w, hy - ux * w], [hx + uy * hw, hy - ux * hw], [x2, y2],
       [hx - uy * hw, hy + ux * hw], [hx - uy * w, hy + ux * w], [x1 - uy * w, y1 + ux * w],
     ].map((p) => p.map((n) => n.toFixed(3)).join(',')).join(' ');
-    return `<svg class="arrows" viewBox="0 0 8 8" preserveAspectRatio="none"><polygon points="${pts}" fill="rgba(129,182,76,.85)"/></svg>`;
+    return `<svg class="arrows ${cls}" viewBox="0 0 8 8" preserveAspectRatio="none"><polygon points="${pts}" fill="${color}"/></svg>`;
   }
 
   function drawReason(r) {
@@ -1134,6 +1276,7 @@
   $('endReview').onclick = startReview;
   $('reviewBtn').onclick = startReview;
   $('exitReview').onclick = exitReview;
+  $('pgnReview').onclick = importPGN;
   $('deepReview').onclick = () => startReview(true);
   $('undo').onclick = undo;
   $('resign').onclick = resign;
@@ -1159,7 +1302,7 @@
     goto(-1, Math.round(((e.clientX - r.left) / r.width) * (positions().length - 1)));
   });
   document.addEventListener('keydown', (e) => {
-    if (!review || e.target.tagName === 'SELECT') return;
+    if (!review || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
     if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
     if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
   });

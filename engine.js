@@ -380,8 +380,32 @@
     return n;
   }
 
+  // Reads a PGN (as exported by chess.com or lichess): header tags plus the main line.
+  // Comments, variations, NAGs and annotation marks are skipped. Throws on an illegal move.
+  function parsePGN(text) {
+    const tags = {};
+    text = text.replace(/\[(\w+)\s+"((?:[^"\\]|\\.)*)"\]/g, (_, k, v) => { tags[k] = v.replace(/\\(.)/g, '$1'); return ' '; });
+    if (tags.FEN && tags.FEN.trim() !== START_FEN) throw new Error('Games from a custom start position are not supported.');
+    text = text.replace(/\{[^}]*\}/g, ' ').replace(/;[^\n]*/g, ' ');
+    while (/\([^()]*\)/.test(text)) text = text.replace(/\([^()]*\)/g, ' ');
+    const clean = (t) => t.replace(/[+#!?]/g, '').replace(/^0-0(-0)?$/, (m) => m.replace(/0/g, 'O'));
+    let s = fromFEN(START_FEN);
+    const moves = [];
+    for (const tok of text.split(/\s+/)) {
+      if (!tok || /^\d+\.+$/.test(tok) || /^\$\d+$/.test(tok) || /^(1-0|0-1|1\/2-1\/2|\*)$/.test(tok)) continue;
+      const want = clean(tok.replace(/^\d+\.+/, ''));
+      if (!want) continue;
+      const m = legalMoves(s).find((o) => clean(san(s, o)) === want);
+      if (!m) throw new Error(`Move ${Math.floor(moves.length / 2) + 1}${moves.length % 2 ? '…' : '.'} ${want} is not legal in this position.`);
+      moves.push(m);
+      s = makeMove(s, m);
+    }
+    if (!moves.length) throw new Error('No moves found.');
+    return { tags, moves };
+  }
+
   const api = {
-    START_FEN, fromFEN, toFEN, newGame: () => fromFEN(START_FEN),
+    START_FEN, fromFEN, toFEN, newGame: () => fromFEN(START_FEN), parsePGN,
     legalMoves, makeMove, inCheck, status, san, bestMove, perft, squareName: name,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
