@@ -850,6 +850,16 @@
     return (defended ? V[piece.t] - minA : V[piece.t]) - gained >= 2;
   }
 
+  // Moves too natural to call Great even when they are the only good one: getting out of check,
+  // recapturing, or taking a piece worth at least as much as the capturer (finishing a trade).
+  function isObvious(before, next) {
+    const m = next.lastMove, V = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+    if (E.inCheck(before)) return true;
+    if (!next.captured) return false;
+    if (before.captured && before.lastMove && before.lastMove.to === m.to) return true;
+    return V[next.captured.t] >= V[before.board[m.from].t];
+  }
+
   // Classify the move from `before` to `next`, given engine analysis of both positions (side-to-move view).
   function classifyMove(before, next, a, b, uci, movesSoFar) {
     const wpBefore = winPct(a.score), wpAfter = winPct(-b.score);
@@ -859,7 +869,8 @@
     else if (uci === a.best || loss < 0.5) {
       c = 'best';
       if (uci === a.best && wpBefore < 97 && wpAfter >= 45 && isSacrifice(before, next)) c = 'brilliant';
-      else if (uci === a.best && a.second !== null && wpBefore - winPct(a.second) >= 18 && wpAfter >= 30 && wpBefore < 95) c = 'great';
+      else if (uci === a.best && a.second !== null && wpBefore - winPct(a.second) >= 18 && wpAfter >= 30 && wpBefore < 95
+        && !isObvious(before, next)) c = 'great';
     } else if (loss <= 2) c = 'excellent';
     else if (loss <= 5) c = 'good';
     else if (loss <= 10) c = 'inaccuracy';
