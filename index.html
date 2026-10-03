@@ -175,6 +175,8 @@
       <div class="acc">
         <div><b id="accW">–</b><span>White accuracy</span></div>
         <div><b id="accB">–</b><span>Black accuracy</span></div>
+        <div><b id="eloW">–</b><span>White played like</span></div>
+        <div><b id="eloB">–</b><span>Black played like</span></div>
       </div>
       <div class="comment" id="comment"></div>
       <svg class="graph" id="graph" viewBox="0 0 300 64" preserveAspectRatio="none"></svg>
@@ -250,6 +252,7 @@
 
 <script src="engine.js"></script>
 <script src="ai.js"></script>
+<script src="review-stats.js"></script>
 <script>
 (function () {
   'use strict';
@@ -815,8 +818,7 @@
   function closeModal(id) { $(id).classList.remove('open'); }
 
   // ---- Review ----
-  const winPct = (cp) => (cp >= AI.MATE_BOUND ? 100 : cp <= -AI.MATE_BOUND ? 0 : 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1));
-  const moveAccuracy = (loss) => Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * loss) - 3.1669));
+  const RS = window.ReviewStats, winPct = RS.winPct;
   function fmtEval(cp) { // cp from White's view
     if (Math.abs(cp) >= AI.MATE_BOUND) { const n = Math.ceil((MATE - Math.abs(cp)) / 2); return (cp > 0 ? '' : '-') + 'M' + n; }
     return (cp > 0 ? '+' : '') + (cp / 100).toFixed(1);
@@ -855,7 +857,8 @@
     else if (loss <= 10) c = 'inaccuracy';
     else if (loss <= 20) c = 'mistake';
     else c = 'blunder';
-    return { c, loss, acc: c === 'book' ? 100 : moveAccuracy(loss) };
+    const cpLoss = Math.max(0, RS.cpClamp(a.score) - RS.cpClamp(-b.score));
+    return { c, loss, cpLoss, acc: c === 'book' ? 100 : RS.moveAccuracy(loss), counted: c !== 'book' };
   }
 
   async function analysisFor(state, moves, urgent) {
@@ -1010,9 +1013,24 @@
     $('deepReview').disabled = review.deep;
     $('deepReview').textContent = review.deep || deepCached ? 'Deep review' : 'Deep review (≈99 MB download)';
     $('engineLabel').textContent = 'Engine: ' + engineLabel();
+    // Accuracy and estimated rating over the game's main line (book moves don't count)
+    let lastWin = 50;
+    const whiteWin = pos.map((st, k) => {
+      const an = review.analysis[k];
+      if (an) lastWin = winPct(st.turn === 'w' ? an.score : -an.score);
+      return lastWin;
+    });
+    const moves = pos.slice(1).map((_, k) => review.cls[k] || null);
+    const cpLoss = moves.map((m) => (m && m.counted ? m.cpLoss : null));
     for (const c of ['w', 'b']) {
-      const accs = review.cls.filter((x, i) => x && (i % 2 === 0) === (c === 'w')).map((x) => x.acc);
-      $(c === 'w' ? 'accW' : 'accB').textContent = accs.length ? (accs.reduce((a, b) => a + b, 0) / accs.length).toFixed(1) : '–';
+      const acc = RS.gameAccuracy(whiteWin, moves, c);
+      const counted = moves.filter((m, k) => m && m.counted && (k % 2 === 0) === (c === 'w')).length;
+      const elo = RS.estimateElo(RS.acpl(cpLoss, c), counted);
+      $(c === 'w' ? 'accW' : 'accB').textContent = acc === null ? '–' : acc.toFixed(1);
+      $(c === 'w' ? 'eloW' : 'eloB').textContent = elo === null ? '–' : '≈' + elo;
+      $(c === 'w' ? 'eloW' : 'eloB').title = elo === null
+        ? `Needs at least ${RS.MIN_MOVES_FOR_ELO} non-book moves`
+        : `Average centipawn loss ${RS.acpl(cpLoss, c).toFixed(0)} over ${counted} moves`;
     }
     // Comment on the move that led to the viewed position, plus the engine's line from here
     const cm = $('comment'), a = node.analysis, mv = node.move;
