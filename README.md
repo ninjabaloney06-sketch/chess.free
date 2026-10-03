@@ -10,6 +10,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
 - Computer opponent at eight ratings: 1000 to 2200 use the built-in engine, and 2400 uses Stockfish's own strength limiter. All are checked against Stockfish (see below).
 - Two players on one device
 - Resign (click twice to confirm), new game, undo, and board flip
+- Captured pieces for each side, with a +N showing who is ahead in material (pawn 1, knight and bishop 3, rook 5, queen 9)
 - **Game review** powered by Stockfish 19 Lite at full strength (0.5 s per position, ≈3000+):
   - Eval bar and evaluation graph
   - Accuracy for each player
@@ -17,7 +18,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
   - An arrow showing the best move whenever you missed it
   - Step through with ◀ ▶, the arrow keys, the move list, or the graph
   - **Variations:** play any move on the board during review to branch off. Variations appear indented in the move list, and each move gets its own label, evaluation, and best line from Stockfish. Click × to delete a variation.
-  - **Deep review:** click *Deep review* to re-analyze the game with the full Stockfish 19 (the big-network build, about 99 MB) at 1.5 s per position. It is too big to ship in the repo, so the first deep review downloads it from the npm CDN (unpkg.com), which needs an internet connection. After that the browser usually caches it. For offline deep review, run `node stockfish/get-full-engine.js` once and serve the folder over HTTP: the page then uses that local copy. If the engine can't be loaded, the page says so and shows the normal review. The full engine is somewhat stronger than Lite at the same time per move, but both are far beyond human strength, so most move labels won't change.
+  - **Deep review:** click *Deep review* to re-analyze the game with the full Stockfish 19 (the big-network build, about 99 MB) at 1.5 s per position. It is too big to ship in the repo, so the first deep review downloads it from the npm CDN (unpkg.com), which needs an internet connection. The page then keeps it in the browser's storage (IndexedDB), so later deep reviews work offline. Clearing the site's data removes it. If you serve the folder over HTTP, you can instead run `node stockfish/get-full-engine.js` once, and the page uses that local copy. If the engine can't be loaded, the page says so and shows the normal review. The full engine is somewhat stronger than Lite at the same time per move, but both are far beyond human strength, so most move labels won't change.
 
 ## Files
 

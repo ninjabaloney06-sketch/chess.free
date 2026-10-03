@@ -96,6 +96,7 @@
   label { font-size: .9rem; }
   .captured { min-height: 28px; display: flex; flex-wrap: wrap; align-items: center; }
   .captured svg { width: 26px; height: 26px; margin-right: -6px; }
+  .captured .lead { margin-left: 12px; font-size: .9rem; font-weight: 600; color: var(--muted); }
   .moves { max-height: 300px; overflow-y: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9rem;
     display: grid; grid-template-columns: 34px 1fr 1fr; row-gap: 2px; }
   .moves .n { color: var(--muted); padding-top: 2px; }
@@ -405,9 +406,27 @@
 
   // Full Stockfish 19 for deep review: ~99 MB, too big to ship in the repo, so it is downloaded on
   // demand. A copy in stockfish/ (from `node stockfish/get-full-engine.js`) is used first when the
-  // page is served over HTTP; otherwise it comes from the npm CDN. The browser caches the download.
+  // page is served over HTTP; otherwise it comes from the npm CDN once and is kept in IndexedDB,
+  // so later deep reviews work offline.
   const FULL_SF = 'stockfish-19-single';
   const FULL_SF_CDN = 'https://unpkg.com/stockfish@19.0.0/bin/';
+  function idb(mode, fn) {
+    return new Promise((resolve, reject) => {
+      const open = indexedDB.open('stone-chess', 1);
+      open.onupgradeneeded = () => open.result.createObjectStore('files');
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const db = open.result, tx = db.transaction('files', mode), req = fn(tx.objectStore('files'));
+        tx.oncomplete = () => { db.close(); resolve(req.result); };
+        tx.onerror = tx.onabort = () => { db.close(); reject(tx.error); };
+      };
+    });
+  }
+  async function fetchOk(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' for ' + url);
+    return res;
+  }
 
   class StockfishEngine {
     constructor(name, sources, timeoutMs) {
@@ -425,13 +444,32 @@
       if (this.w) { this.w.terminate(); this.w = null; }
       let w;
       if (src.direct) w = new Worker(src.direct);
-      else if (src.js) {
+      else if (src.cache) {
+        // Downloaded once, then kept in IndexedDB. The WASM bytes are posted to the worker, and a
+        // fetch shim hands them to the script (from file:// a worker can't fetch blob URLs).
+        let files = null;
+        try { files = await idb('readonly', (st) => st.get(src.cache)); } catch (e) { /* no storage: download */ }
+        if (!files) {
+          files = { js: await (await fetchOk(src.js)).text(), wasm: await this.download(src.wasm) };
+          try {
+            await idb('readwrite', (st) => st.put(files, src.cache));
+            if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+          } catch (e) { /* not cached: downloads again next time */ }
+        }
+        const shim = 'var __sfWasm=new Promise(function(r){self.addEventListener("message",function h(e){' +
+          'if(e.data&&e.data.sfWasm){self.removeEventListener("message",h);r(e.data.sfWasm)}})});' +
+          'var __sfFetch=self.fetch;self.fetch=function(u,o){return /\\.wasm/.test(String(u))?__sfWasm.then(function(b){' +
+          'return new Response(b,{headers:{"Content-Type":"application/wasm"}})}):__sfFetch(u,o)};\n';
+        w = new Worker(URL.createObjectURL(new Blob([shim + files.js], { type: 'text/javascript' })) + '#stockfish.wasm');
+        // The script takes progressPort for itself and ignores the rest of this message.
+        const buf = await files.wasm.arrayBuffer(), ch = new MessageChannel();
+        w.postMessage({ progressPort: ch.port2, sfWasm: buf }, [ch.port2, buf]);
+      } else if (src.js) {
         // Fetch the script and run it from a blob so it can come from another origin or from file://.
         // Its WASM URL goes after the '#'; the script fetches it itself and reports download progress.
         const js = new URL(src.js, location.href).href, wasm = new URL(src.wasm, location.href).href;
         if (src.probe && !(await fetch(wasm, { method: 'HEAD' })).ok) throw new Error('not found: ' + wasm);
-        const res = await fetch(js);
-        if (!res.ok) throw new Error('HTTP ' + res.status + ' for ' + js);
+        const res = await fetchOk(js);
         w = new Worker(URL.createObjectURL(new Blob([await res.text()], { type: 'text/javascript' })) + '#' + encodeURIComponent(wasm));
         const ch = new MessageChannel();
         ch.port1.onmessage = (e) => { this.progress = e.data; if (this.onProgress) this.onProgress(e.data); };
@@ -460,6 +498,21 @@
           w.postMessage('uci');
         });
       } catch (e) { w.terminate(); this.w = null; throw e; }
+    }
+    // Fetch a file into a Blob, reporting progress the way the Stockfish script does.
+    async download(url) {
+      const res = await fetchOk(url);
+      const total = +res.headers.get('Content-Length') || 0, reader = res.body.getReader(), chunks = [], t0 = Date.now();
+      let loaded = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value); loaded += value.byteLength;
+        const rate = loaded / Math.max(0.001, (Date.now() - t0) / 1000), eta = total ? (total - loaded) / rate : 0;
+        this.progress = { percent: total ? loaded / total : 0, loaded, total, etaText: !eta ? '' : eta < 60 ? Math.ceil(eta) + ' sec' : Math.round(eta / 60) + ' min' };
+        if (this.onProgress) this.onProgress(this.progress);
+      }
+      return new Blob(chunks, { type: 'application/wasm' });
     }
     send(s) { this.w.postMessage(s); }
     request(job, urgent) {
@@ -514,8 +567,10 @@
     () => (http ? [{ direct: 'stockfish/stockfish-19-lite-single.js' }, {}] : [{}]), 20000);
   const deepStockfish = new StockfishEngine('Stockfish 19',
     () => (http ? [{ js: `stockfish/${FULL_SF}.js`, wasm: `stockfish/${FULL_SF}.wasm`, probe: true, hash: 128 }] : [])
-      .concat([{ js: FULL_SF_CDN + FULL_SF + '.js', wasm: FULL_SF_CDN + FULL_SF + '.wasm', hash: 128 }]), 15 * 60000);
+      .concat([{ cache: FULL_SF + '@19.0.0', js: FULL_SF_CDN + FULL_SF + '.js', wasm: FULL_SF_CDN + FULL_SF + '.wasm', hash: 128 }]), 15 * 60000);
   deepStockfish.onProgress = () => { if (review && review.loading) renderReview(); };
+  let deepCached = false;
+  idb('readonly', (st) => st.count(FULL_SF + '@19.0.0')).then((n) => { deepCached = n > 0; }, () => {});
   let gen = 0, sfOk = null;
   stockfish.load().then((ok) => { sfOk = ok; render(); });
   function cancelEngine() { gen++; builtin.cancel(); if (sfOk) stockfish.cancel(); if (deepStockfish.w) deepStockfish.cancel(); }
@@ -747,8 +802,9 @@
       const ok = await deepStockfish.load();
       if (review !== myReview) return;
       review.loading = false;
-      if (!ok) {
-        deepError = 'Deep review needs an internet connection to download the full engine (about 99 MB), or a local copy (see README). Showing the normal review instead.';
+      if (ok) deepCached = true;
+      else {
+        deepError = 'Deep review needs an internet connection the first time, to download the full engine (about 99 MB). After that it works offline. Showing the normal review instead.';
         review.deep = false;
       }
       render();
@@ -864,13 +920,14 @@
     $('reviewProgress').style.width = (100 * review.done / n) + '%';
     const p = deepStockfish.progress;
     $('reviewProgressText').textContent = review.loading
-      ? (p ? `Downloading full Stockfish… ${Math.floor(100 * p.percent)}% of ${Math.round(p.total / 1e6)} MB${p.etaText ? ', ' + p.etaText + ' left' : ''}`
+      ? (p && p.total ? `Downloading full Stockfish… ${Math.floor(100 * p.percent)}% of ${Math.round(p.total / 1e6)} MB${p.etaText ? ', ' + p.etaText + ' left' : ''}`
+        : p ? `Downloading full Stockfish… ${Math.round(p.loaded / 1e6)} MB`
         : 'Starting full Stockfish…')
       : (deepError ? deepError + ' ' : '') + (review.done < n
         ? `Analyzing… ${review.done}/${n} positions`
         : `Analyzed ${n - 1} moves. Play moves on the board to explore variations.`);
     $('deepReview').disabled = review.deep;
-    $('deepReview').textContent = review.deep ? 'Deep review' : 'Deep review (≈99 MB)';
+    $('deepReview').textContent = review.deep || deepCached ? 'Deep review' : 'Deep review (≈99 MB download)';
     $('engineLabel').textContent = 'Engine: ' + engineLabel();
     for (const c of ['w', 'b']) {
       const accs = review.cls.filter((x, i) => x && (i % 2 === 0) === (c === 'w')).map((x) => x.acc);
@@ -998,9 +1055,14 @@
     const path = node ? node.path : pos;
     for (let k = 1; k < path.length; k++) if (path[k].captured) caps[path[k - 1].turn].push(path[k].captured);
     const order = 'qrbnp';
+    // Material lead from the pieces on the board, so promotions count too
+    const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+    const lead = view.board.reduce((s, p) => s + (p ? (p.c === 'w' ? 1 : -1) * VAL[p.t] : 0), 0);
     for (const c of ['w', 'b']) {
       caps[c].sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t));
-      $(c === 'w' ? 'capW' : 'capB').innerHTML = caps[c].map((p) => pieceSVG(p.t, p.c, '')).join('');
+      const ahead = c === 'w' ? lead : -lead;
+      $(c === 'w' ? 'capW' : 'capB').innerHTML = caps[c].map((p) => pieceSVG(p.t, p.c, '')).join('') +
+        (ahead > 0 ? `<span class="lead">+${ahead}</span>` : '');
     }
 
     // Move list, with review variations under the move they branch from
