@@ -77,6 +77,12 @@
   .sq.light .coord { color: var(--coord-light); } .sq.dark .coord { color: var(--coord-dark); }
   .badge { position: absolute; top: 2%; right: 2%; width: 36%; height: 36%; z-index: 4; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
   .arrows { position: absolute; inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); pointer-events: none; z-index: 3; }
+  .board, .board * { -webkit-user-drag: none; -webkit-touch-callout: none; }
+  .sq.marked::before { content: ""; position: absolute; inset: 0; background: rgba(235, 97, 80, .8); }
+  .sq.drag-src > svg.piece { opacity: .3; }
+  .sq.drag-over { box-shadow: inset 0 0 0 4px rgba(255, 255, 255, .65); }
+  .drag-ghost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; will-change: transform; filter: drop-shadow(2px 6px 4px rgba(0, 0, 0, .45)); }
+  .drag-ghost > svg { width: 100%; height: 100%; display: block; }
 
   /* Side panel */
   .side { width: min(100%, 360px); display: flex; flex-direction: column; gap: 12px; }
@@ -696,27 +702,102 @@
   const legalTo = (from, to) => E.legalMoves(boardState()).filter((m) => m.from === from && m.to === to);
   function commit(m) { if (review) reviewMove(m); else doMove(m); }
   function play(options) { if (options.length > 1) openPromo(options); else commit(options[0]); }
-  let dragFrom = null, deselectOnUp = false;
+  // Drag: the piece follows the pointer in a floating ghost that lives outside the board, so re-renders don't drop it.
+  // Annotations: Shift + click (or right-click) marks a square, Shift + drag (or right-drag) draws an arrow.
+  let drag = null, deselectOnUp = false, ann = null;
+  const marks = { view: null, arrows: [], squares: [] };
+  const USER_ARROW = 'rgba(255, 170, 0, .8)';
+  const squareAt = (x, y) => { const el = document.elementFromPoint(x, y); const sq = el && el.closest('#board .sq'); return sq ? +sq.dataset.i : null; };
+  const sqEl = (i) => boardEl.querySelector(`.sq[data-i="${i}"]`);
+  function moveGhost(x, y) {
+    if (drag && drag.ghost) drag.ghost.style.transform = `translate(${x - drag.size / 2}px, ${y - drag.size / 2}px)`;
+  }
+  function setDragOver(i) {
+    if (drag.over === i) return;
+    if (drag.over !== null) { const el = sqEl(drag.over); if (el) el.classList.remove('drag-over'); }
+    drag.over = i;
+    if (i !== null && i !== drag.from) { const el = sqEl(i); if (el) el.classList.add('drag-over'); }
+  }
+  function endDrag() {
+    if (!drag) return;
+    if (drag.ghost) drag.ghost.remove();
+    drag = null;
+  }
+  function drawAnnPreview() {
+    const old = boardEl.querySelector('.arrows.preview');
+    if (old) old.remove();
+    if (ann && ann.to !== null && ann.to !== ann.from) boardEl.insertAdjacentHTML('beforeend', arrowSVG(ann.from, ann.to, USER_ARROW, 'preview'));
+  }
+  function clearMarks() {
+    if (!marks.arrows.length && !marks.squares.length) return false;
+    marks.arrows = []; marks.squares = [];
+    return true;
+  }
+
+  boardEl.addEventListener('contextmenu', (e) => e.preventDefault());
+  boardEl.addEventListener('dragstart', (e) => e.preventDefault());
+  boardEl.addEventListener('mousedown', (e) => e.preventDefault()); // Shift+click would otherwise select page text
   boardEl.addEventListener('pointerdown', (e) => {
-    const sqEl = e.target.closest('.sq');
-    if (!sqEl || !canMove()) return;
-    const st = boardState();
-    const i = +sqEl.dataset.i, p = st.board[i];
-    dragFrom = null;
-    if (selected !== null && legalTo(selected, i).length) play(legalTo(selected, i));
-    else if (p && p.c === st.turn) { deselectOnUp = selected === i; selected = i; dragFrom = i; render(); }
-    else { selected = null; render(); }
+    const i = squareAt(e.clientX, e.clientY);
+    if (i === null) return;
+    e.preventDefault(); // no native text selection or image drag
+    if (drag || ann) return;
+    if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
+      ann = { from: i, to: i, id: e.pointerId };
+      boardEl.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (e.button !== 0) return;
+    const cleared = clearMarks();
+    if (!canMove()) { if (cleared) render(); return; }
+    const st = boardState(), p = st.board[i];
+    if (selected !== null && legalTo(selected, i).length) { play(legalTo(selected, i)); return; }
+    if (p && p.c === st.turn) {
+      deselectOnUp = selected === i; selected = i;
+      const size = sqEl(i).getBoundingClientRect().width;
+      const ghost = document.createElement('div');
+      ghost.className = 'drag-ghost';
+      ghost.style.width = ghost.style.height = size + 'px';
+      ghost.innerHTML = pieceSVG(p.t, p.c);
+      document.body.appendChild(ghost);
+      drag = { from: i, id: e.pointerId, ghost, size, over: null };
+      moveGhost(e.clientX, e.clientY);
+      boardEl.setPointerCapture(e.pointerId);
+      render();
+      setDragOver(i);
+    } else { selected = null; render(); }
+  });
+  boardEl.addEventListener('pointermove', (e) => {
+    if (drag && e.pointerId === drag.id) {
+      moveGhost(e.clientX, e.clientY);
+      setDragOver(squareAt(e.clientX, e.clientY));
+    } else if (ann && e.pointerId === ann.id) {
+      const i = squareAt(e.clientX, e.clientY);
+      if (i !== ann.to) { ann.to = i; drawAnnPreview(); }
+    }
   });
   boardEl.addEventListener('pointerup', (e) => {
-    if (dragFrom === null) return;
-    const from = dragFrom; dragFrom = null;
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const sqEl = el && el.closest('.sq');
-    if (!sqEl) return;
-    const i = +sqEl.dataset.i;
-    if (i === from) { if (deselectOnUp) { selected = null; render(); } }
-    else if (legalTo(from, i).length) play(legalTo(from, i));
+    if (ann && e.pointerId === ann.id) {
+      const { from } = ann, to = squareAt(e.clientX, e.clientY);
+      ann = null;
+      if (to === from) {
+        const k = marks.squares.indexOf(from);
+        if (k >= 0) marks.squares.splice(k, 1); else marks.squares.push(from);
+      } else if (to !== null) {
+        const k = marks.arrows.findIndex((a) => a.from === from && a.to === to);
+        if (k >= 0) marks.arrows.splice(k, 1); else marks.arrows.push({ from, to });
+      }
+      render();
+      return;
+    }
+    if (!drag || e.pointerId !== drag.id) return;
+    const from = drag.from, i = squareAt(e.clientX, e.clientY);
+    endDrag();
+    if (i === from) { if (deselectOnUp) selected = null; render(); }
+    else if (i !== null && canMove() && legalTo(from, i).length) play(legalTo(from, i));
+    else render(); // dropped off the board or on an illegal square: snap back, keep the piece selected
   });
+  boardEl.addEventListener('pointercancel', () => { ann = null; endDrag(); render(); });
 
   function openPromo(options) {
     pendingPromo = options;
@@ -1006,6 +1087,7 @@
     const last = view.lastMove;
     const kingInCheck = E.inCheck(view) ? view.board.findIndex((p) => p && p.t === 'k' && p.c === view.turn) : -1;
     const badge = node && node.move && node.move.cls ? node.move.cls.c : null;
+    if (marks.view !== view) { marks.view = view; marks.arrows = []; marks.squares = []; }
 
     boardEl.innerHTML = '';
     for (let v = 0; v < 64; v++) {
@@ -1017,6 +1099,9 @@
       d.style.backgroundPosition = `${-((i * 97) % 170)}px ${-((i * 61) % 170)}px`;
       if (last && (last.from === i || last.to === i)) d.classList.add('last');
       if (selected === i) d.classList.add('sel');
+      if (marks.squares.includes(i)) d.classList.add('marked');
+      if (drag && drag.from === i) d.classList.add('drag-src');
+      if (drag && drag.over === i && i !== drag.from) d.classList.add('drag-over');
       if (kingInCheck === i) d.classList.add('check');
       const target = legal.find((m) => m.to === i);
       if (target) d.classList.add('target', view.board[i] || target.enPassant ? 'capture' : 'quiet');
@@ -1036,6 +1121,8 @@
       const bm = best && findUci(node.move.prevState, best);
       if (bm) boardEl.insertAdjacentHTML('beforeend', arrowSVG(bm.from, bm.to));
     }
+    for (const a of marks.arrows) boardEl.insertAdjacentHTML('beforeend', arrowSVG(a.from, a.to, USER_ARROW));
+    drawAnnPreview();
 
     // Status line
     const gs = gameStatus();
@@ -1106,7 +1193,7 @@
     }
   }
 
-  function arrowSVG(from, to) {
+  function arrowSVG(from, to, color = 'rgba(129,182,76,.85)', cls = '') {
     const xy = (i) => { const v = flipped ? 63 - i : i; return [(v % 8) + 0.5, Math.floor(v / 8) + 0.5]; };
     const [x1, y1] = xy(from), [x2, y2] = xy(to);
     const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
@@ -1115,7 +1202,7 @@
       [x1 + uy * w, y1 - ux * w], [hx + uy * w, hy - ux * w], [hx + uy * hw, hy - ux * hw], [x2, y2],
       [hx - uy * hw, hy + ux * hw], [hx - uy * w, hy + ux * w], [x1 - uy * w, y1 + ux * w],
     ].map((p) => p.map((n) => n.toFixed(3)).join(',')).join(' ');
-    return `<svg class="arrows" viewBox="0 0 8 8" preserveAspectRatio="none"><polygon points="${pts}" fill="rgba(129,182,76,.85)"/></svg>`;
+    return `<svg class="arrows ${cls}" viewBox="0 0 8 8" preserveAspectRatio="none"><polygon points="${pts}" fill="${color}"/></svg>`;
   }
 
   function drawReason(r) {
