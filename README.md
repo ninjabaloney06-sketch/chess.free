@@ -13,17 +13,19 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
 - Draw on the board like chess.com or lichess: hold Shift (or use the right mouse button) and click a square to mark it, or drag to draw an arrow. Do it again to remove one; a normal click or the next move clears them all
 - Resign (click twice to confirm), new game, undo, and board flip
 - Player bars above and below the board with each side's captured pieces and a +N showing who is ahead in material (pawn 1, knight and bishop 3, rook 5, queen 9)
-- **Import a game:** paste a PGN from chess.com or lichess and click *Review this game*. Player names and ratings come from the PGN; comments, variations and annotations in it are skipped
-- **Game review** powered by Stockfish 19 Lite at full strength (0.5 s per position, ≈3000+):
+- A layout modeled on chess.com: dark theme, the board sized to the window, player bars with avatars, and one side panel as tall as the board with Play, Review and Import tabs that scroll inside it
+- **Import a game:** open the Import tab, paste a PGN from chess.com or lichess and click *Review this game*. Player names and ratings come from the PGN; comments, variations and annotations in it are skipped
+- **Game review** powered by Stockfish 19 Lite at full strength (300k nodes per position, about 0.6 s on a laptop). A fixed node count instead of a time limit means the same game always gets the same review. Tuned to match chess.com's Game Review (see *Matching chess.com* below):
+  - A summary first, like chess.com: a coach comment naming the turning point, the evaluation graph, each player's accuracy, move-label counts and game rating. *Start Review* then steps through the moves with a comment on each
   - Eval bar and evaluation graph
-  - Accuracy for each player. Book moves don't count, and a few blunders pull it down hard instead of hiding behind many easy moves (roughly: no blunders ≈ 94, one ≈ 80–84, three ≈ 67–74)
-  - **Rating estimate:** the rating each side played like in this game, from their average centipawn loss (see below)
-  - A move is only Great when it was the one good move *and* not an obvious one: getting out of check, recapturing, or finishing a trade (taking a piece worth at least as much as the capturer) count as Best
-  - Every move labeled Brilliant, Great, Best, Excellent, Good, Book, Inaccuracy, Mistake, or Blunder
+  - Accuracy for each player: the harmonic mean of their move accuracies, book moves not counted
+  - **Game rating:** the rating each side played like in this game, from their accuracy
+  - Every move labeled Brilliant, Great, Book, Best, Excellent, Good, Inaccuracy, Mistake, Miss, or Blunder. Best is only the engine's top move. A Miss is a Mistake or Blunder right after the opponent's own, when the chance to punish it went begging. A move is only Great when it was the one good move *and* not an obvious one: getting out of check, recapturing on the square just taken, or taking an undefended piece count as Best
+  - **Opening book:** imported chess.com games use chess.com's own book line from the PGN's `[ECOUrl]` tag; other games use lichess's openings list (about 3,900 named lines, matched by position so transpositions count)
   - An arrow showing the best move whenever you missed it
   - Step through with ◀ ▶, the arrow keys, the move list, or the graph
   - **Variations:** play any move on the board during review to branch off. Variations appear indented in the move list, and each move gets its own label, evaluation, and best line from Stockfish. Click × to delete a variation.
-  - **Deep review:** click *Deep review* to re-analyze the game with the full Stockfish 19 (the big-network build, about 99 MB) at 1.5 s per position. It is too big to ship in the repo, so the first deep review downloads it from the npm CDN (unpkg.com), which needs an internet connection. The page then keeps it in the browser's storage (IndexedDB), so later deep reviews work offline. Clearing the site's data removes it. If you serve the folder over HTTP, you can instead run `node stockfish/get-full-engine.js` once, and the page uses that local copy. If the engine can't be loaded, the page says so and shows the normal review. The full engine is somewhat stronger than Lite at the same time per move, but both are far beyond human strength, so most move labels won't change.
+  - **Deep review:** click *Deep review* to re-analyze the game with the full Stockfish 19 (the big-network build, about 99 MB) at 1M nodes per position. It is too big to ship in the repo, so the first deep review downloads it from the npm CDN (unpkg.com), which needs an internet connection. The page then keeps it in the browser's storage (IndexedDB), so later deep reviews work offline. Clearing the site's data removes it. If you serve the folder over HTTP, you can instead run `node stockfish/get-full-engine.js` once, and the page uses that local copy. If the engine can't be loaded, the page says so and shows the normal review. The full engine is somewhat stronger than Lite at the same time per move, but both are far beyond human strength, so most move labels won't change.
 
 ## Files
 
@@ -35,7 +37,9 @@ A complete chess game on a stone board with hand-drawn black and white pieces. A
 | `test.js` | `node test.js` checks both move generators against standard perft counts, plus game-end detection and the bot finding mates |
 | `stockfish/` | Stockfish 19 Lite (WebAssembly, GPLv3) and `stockfish-bundle.js`, the same engine packed into one script so it can start from `file://`. Rebuild the bundle with `node stockfish/make-bundle.js`. |
 | `stockfish/get-full-engine.js` | Optional: downloads the full Stockfish 19 for offline deep review (git-ignored) |
-| `review-stats.js` | Accuracy and rating-estimate formulas, shared by the page and `calibrate-review.js` |
+| `review-stats.js` | Expected points, accuracy and game-rating formulas (plus the older ACPL rating estimate), shared by the page and `calibrate-review.js` |
+| `openings.js` | The opening book: hashes of every position on lichess's named opening lines (CC0). Rebuild with `node make-openings.js` |
+| `openings-core.js` | Opening book lookups, and reading chess.com's book line from a PGN's `[ECOUrl]` |
 | `calibrate-review.js` | `node calibrate-review.js <level>[:<level2>] <games> [analysisMs]` has a bot level play itself (or another level, swapping colors each game) and prints each side's average centipawn loss, accuracy and per-move scores, to fit the rating estimate |
 | `calibrate.js` | `node calibrate.js <level> <stockfishElo> <games> [refMs]` plays a bot level (built-in, or Stockfish.js via `{"engine":"sfjs",...}`) against native Stockfish with `UCI_LimitStrength` |
 
@@ -57,7 +61,37 @@ Levels 1000–2200 are the built-in engine with a search depth limit, plus rando
 
 Each figure is accurate to about ±70–100 Elo. Stockfish's `UCI_Elo` cannot go below 1320, so the 1000 and 1200 levels are extrapolated from their score against that floor. Native Stockfish played at 150 ms per move, except against the review engine, where it had 1 s per move so its 3000 setting could reach full depth. Stockfish Lite's own `UCI_Elo` reads low: set to 2400 it measured ≈ 2310, so the 2400 level uses 2540.
 
-## Rating estimate
+## Matching chess.com
+
+Review is tuned so its numbers line up with chess.com's Game Review. The reference is a real 29-move game that chess.com reviewed (both players rated about 1400–1650):
+
+```
+1. d4 d5 2. c4 dxc4 3. e4 e5 4. Nf3 Bb4+ 5. Nc3 exd4 6. Qxd4 Qxd4 7. Nxd4 Ne7 8. Bxc4 O-O 9. Bd2 Nbc6
+10. Nxc6 Nxc6 11. a3 Bd6 12. O-O Bg4 13. h3 Be6 14. Bxe6 fxe6 15. f4 Nd4 16. e5 Nb3 17. exd6 Nxd2
+18. Rfd1 Nb3 19. Rab1 cxd6 20. Rxd6 Rxf4 21. Rxe6 Nd4 22. Re7 b6 23. Rd1 Nc6 24. Rc7 Ne5 25. Re1 Nd3
+26. Ree7 Nxb2 27. Rxg7+ Kf8 28. Rxh7 Nd3 29. Rh8# 1-0
+```
+
+| | chess.com | This app |
+|---|---|---|
+| Accuracy (White / Black) | 95.7 / 82.3 | 96.1 / 81.9 |
+| Game rating | 2200 / 2000 | 2200 / 2000 |
+| Book moves | 5 / 5 | 5 / 5 |
+| Blunders | 0 / 0 | 0 / 0 |
+| Mistakes | 0 / 3 | 0 / 2 |
+| Great | 1 / 1 | 1 / 0 |
+
+How:
+
+- **Expected points.** Labels and accuracy use a win-chance curve gentler than lichess's: expected points = 50 + 50 × (2 / (1 + e^(−0.0019 × cp)) − 1), so a pawn is worth about 9.5 points around equality. A move is Excellent if it gives away at most 2 points, Good at most 5, an Inaccuracy at most 10, a Mistake at most 20, and a Blunder beyond that: chess.com's published thresholds. With lichess's steeper curve, 25…Nd3 above was a Blunder; chess.com called it a Mistake. The eval bar and graph still use lichess's curve.
+- **Accuracy.** Each move scores 103.17 × e^(−0.055 × loss) − 3.17 (at least 25), and the game accuracy is the harmonic mean of those. The decay rate was fitted to the reference game.
+- **Game rating** is read off accuracy through a piecewise-linear curve that passes through chess.com's two points (95.7% → 2200, 82.3% → 2000), with the lower end shaped so typical beginner accuracies (50–70%) land at beginner ratings (700–1400). The average centipawn loss is still shown when you hover over an accuracy.
+
+chess.com's engine runs deeper on its servers and its formulas aren't public, so individual labels will sometimes differ, especially moves near a threshold. One game is also a thin basis for the lower end of the rating curve. More chess.com reviews, with the accuracy and game rating chess.com gave, would let it be refit.
+
+## ACPL rating estimate (calibration tool)
+
+Before the chess.com tuning, the review estimated rating from average centipawn loss. `calibrate-review.js` and `RS.estimateElo` still use it, and the notes below describe that fit.
 
 Review estimates the rating each side played like from their average centipawn loss (ACPL): each non-book move's drop in evaluation, with evaluations capped at ±10 pawns. Moves made after the game is already decided (the mover's win chance stays above 95% or below 5% across the move) are left out, since the easy moves of a won ending or a forced mate would otherwise count as perfect play. It needs at least 8 counted moves.
 

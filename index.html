@@ -5,61 +5,69 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stone Chess</title>
 <style>
+  /* Dark theme in the style of chess.com's analysis screens */
   :root {
-    --bg: #ebe8e3;
-    --panel: #ffffff;
-    --panel-2: #f4f2ee;
-    --text: #262421;
-    --muted: #6f6a62;
-    --border: #dcd7cf;
+    color-scheme: dark;
+    --bg: #312e2b;
+    --panel: #262522;
+    --panel-2: #21201d;
+    --panel-3: #3c3a37;
+    --hover: #464441;
+    --line: #3d3a36;
+    --text: #ffffff;
+    --text-2: #c3c2c1;
+    --muted: #989795;
     --accent: #81b64c;
-    --accent-ink: #ffffff;
+    --accent-hi: #a3d160;
+    --accent-shadow: #45753c;
     --frame: #1b1b1b;
     --coord-light: #7fa65a;
     --coord-dark: #ece8de;
-    --select: rgba(129, 182, 76, 0.55);
-    --last: rgba(246, 226, 110, 0.38);
+    --select: rgba(255, 255, 51, 0.35);
+    --last: rgba(255, 255, 51, 0.3);
     --dot: rgba(0, 0, 0, 0.32);
-    --danger: #c9473b;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #262421; --panel: #312e2b; --panel-2: #3a3733; --text: #f0ede8; --muted: #a8a29a; --border: #45413c;
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #262421; --panel: #312e2b; --panel-2: #3a3733; --text: #f0ede8; --muted: #a8a29a; --border: #45413c;
+    --danger: #e0503c;
+    --bar-h: 52px;
+    /* The board fills the window height, like chess.com */
+    --board: min(calc(100vh - 2 * var(--bar-h) - 40px), calc(100vw - 500px), 760px);
   }
   * { box-sizing: border-box; }
+  html { background: var(--bg); }
   body {
     margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex; justify-content: center; padding: 16px;
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
+    display: flex; justify-content: center; align-items: flex-start; padding: 20px 16px;
   }
-  .app { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; justify-content: center; max-width: 1080px; width: 100%; }
-  h1 { margin: 0 0 4px; font-size: 1.45rem; }
-  .sub { margin: 0 0 12px; color: var(--muted); font-size: .9rem; }
-  .main { width: min(100%, 640px); }
-  .status {
-    padding: 10px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border);
-    margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 10px; min-height: 46px;
-  }
-  .swatch { width: 16px; height: 16px; border-radius: 50%; flex: none; border: 2px solid #555; }
-  .swatch.w { background: #f4f4f4; } .swatch.b { background: #1a1a1a; }
+  .app { display: flex; gap: 20px; align-items: flex-start; }
+  .board-col { width: calc(var(--board) + 34px); flex: none; }
   .board-row { display: flex; gap: 8px; align-items: stretch; }
 
+  /* Player bars above and below the board */
+  .player { display: flex; align-items: center; gap: 10px; height: var(--bar-h); padding: 6px 0 6px 34px; min-width: 0; }
+  .avatar { width: 40px; height: 40px; border-radius: 4px; background: #e8e6e3; flex: none; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+  .avatar svg { width: 34px; height: 34px; }
+  .avatar.b { background: #4b4847; }
+  .pinfo { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .pname { font-weight: 700; font-size: .92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pname .rating { font-weight: 400; color: var(--muted); margin-left: 4px; }
+  .captured { display: flex; align-items: center; min-width: 0; height: 18px; }
+  .captured svg { width: 18px; height: 18px; margin-right: -6px; flex: none; }
+  .captured .lead { margin-left: 10px; font-size: .78rem; font-weight: 600; color: var(--muted); }
+  .player .turn { margin-left: auto; font-size: .8rem; color: var(--muted); padding: 6px 10px; border-radius: 4px; background: var(--panel-2); white-space: nowrap; }
+  .player .turn.on { background: #fff; color: #262421; font-weight: 700; }
+
   /* Eval bar */
-  .evalbar { width: 26px; flex: none; position: relative; border-radius: 4px; overflow: hidden; background: #403d39; display: none; }
-  .review-on .evalbar { display: block; }
-  .evalbar .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 50%; background: #f2f2f2; transition: height .35s ease; }
+  .evalbar { width: 26px; flex: none; position: relative; border-radius: 3px; overflow: hidden; background: #403d39; visibility: hidden; }
+  .review-on .evalbar { visibility: visible; }
+  .evalbar .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 50%; background: #fff; transition: height .35s ease; }
   .evalbar.flipped .fill { top: 0; bottom: auto; }
   .evalbar .num { position: absolute; left: 0; right: 0; text-align: center; font-size: 10px; font-weight: 700; z-index: 1; }
-  .evalbar .num.bottom { bottom: 4px; color: #333; } .evalbar .num.top { top: 4px; color: #eee; }
+  .evalbar .num.bottom { bottom: 4px; color: #403d39; } .evalbar .num.top { top: 4px; color: #fff; }
 
   /* Board: stone squares separated by dark seams */
   .board {
-    position: relative; flex: 1; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
-    gap: 3px; padding: 3px; aspect-ratio: 1; background: var(--frame); border-radius: 6px;
+    position: relative; width: var(--board); height: var(--board); flex: none; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
+    gap: 3px; padding: 3px; background: var(--frame); border-radius: 4px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, .35); touch-action: none; user-select: none; min-width: 0;
   }
   .sq { position: relative; display: flex; align-items: center; justify-content: center; cursor: pointer; background-size: 260px 260px; }
@@ -72,10 +80,10 @@
   .sq.target::after { content: ""; position: absolute; width: 30%; height: 30%; border-radius: 50%; background: var(--dot); pointer-events: none; }
   .sq.target.capture::after { width: 86%; height: 86%; background: transparent; border: 5px solid var(--dot); }
   .sq > svg.piece { width: 90%; height: 90%; position: relative; z-index: 1; pointer-events: none; filter: drop-shadow(1px 3px 2px rgba(0, 0, 0, .35)); }
-  .coord { position: absolute; font-weight: 800; pointer-events: none; z-index: 2; font-size: clamp(10px, 2.3vw, 17px); line-height: 1; }
+  .coord { position: absolute; font-weight: 800; pointer-events: none; z-index: 2; font-size: clamp(10px, calc(var(--board) / 42), 17px); line-height: 1; }
   .coord.rank { left: 5%; top: 5%; } .coord.file { right: 5%; bottom: 4%; }
   .sq.light .coord { color: var(--coord-light); } .sq.dark .coord { color: var(--coord-dark); }
-  .badge { position: absolute; top: 2%; right: 2%; width: 36%; height: 36%; z-index: 4; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+  .badge { position: absolute; top: -8%; right: -8%; width: 40%; height: 40%; z-index: 4; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
   .arrows { position: absolute; inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); pointer-events: none; z-index: 3; }
   .board, .board * { -webkit-user-drag: none; -webkit-touch-callout: none; }
   .sq.marked::before { content: ""; position: absolute; inset: 0; background: rgba(235, 97, 80, .8); }
@@ -84,68 +92,119 @@
   .drag-ghost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; will-change: transform; filter: drop-shadow(2px 6px 4px rgba(0, 0, 0, .45)); }
   .drag-ghost > svg { width: 100%; height: 100%; display: block; }
 
-  /* Side panel */
-  .side { width: min(100%, 360px); display: flex; flex-direction: column; gap: 12px; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
-  .card h2 { margin: 0 0 8px; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .field { display: grid; grid-template-columns: 90px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
-  button, select {
-    font: inherit; font-size: .9rem; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--panel-2); color: var(--text); cursor: pointer;
+  /* Side panel: exactly as tall as the board column, scrolling inside */
+  .panel {
+    width: 420px; flex: none; height: calc(var(--board) + 2 * var(--bar-h)); background: var(--panel); border-radius: 8px;
+    display: flex; flex-direction: column; overflow: hidden;
   }
-  select { width: 100%; min-width: 0; }
-  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  .tabs { display: flex; background: var(--panel-2); flex: none; }
+  .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 4px 8px; border: 0; border-radius: 0;
+    background: transparent; color: var(--muted); font-size: .78rem; font-weight: 600; box-shadow: none; border-bottom: 2px solid transparent; }
+  .tab svg { width: 22px; height: 22px; }
+  .tab:hover:not(:disabled) { color: var(--text); background: transparent; }
+  .tab.on { color: var(--text); background: var(--panel); border-bottom-color: transparent; }
+  .tab:disabled { opacity: .35; }
+  .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
+  .pane.on { display: flex; }
+  .pane-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; }
+  .pane-foot { flex: none; padding: 12px 16px 14px; background: var(--panel-2); display: flex; flex-direction: column; gap: 10px; }
+  .pane-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .pane-head .title { flex: 1; text-align: center; font-weight: 700; font-size: 1.05rem; }
+  .icon-btn { width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; background: transparent; box-shadow: none; color: var(--muted); font-size: 1.1rem; }
+  .icon-btn:hover:not(:disabled) { color: var(--text); background: var(--panel-3); }
+
+  .status { font-weight: 700; display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 1.02rem; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+  .swatch.w { background: #fff; } .swatch.b { background: #1a1a1a; border: 1px solid #777; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row > button { flex: 1; }
+  .field { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; margin-bottom: 10px; }
+  label { font-size: .9rem; color: var(--text-2); }
+  button, select {
+    font: inherit; font-size: .92rem; font-weight: 600; padding: 9px 12px; border-radius: 6px; border: 0;
+    background: var(--panel-3); color: var(--text-2); cursor: pointer; box-shadow: 0 3px 0 0 #2a2926;
+  }
+  button:hover:not(:disabled), select:hover { background: var(--hover); color: var(--text); }
+  button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 0 #2a2926; }
+  select { width: 100%; min-width: 0; box-shadow: none; font-weight: 500; }
+  button.primary { background: var(--accent); color: #fff; box-shadow: 0 4px 0 0 var(--accent-shadow); }
+  button.primary:hover:not(:disabled) { background: var(--accent-hi); }
+  button.primary:active:not(:disabled) { box-shadow: 0 1px 0 0 var(--accent-shadow); }
+  button.big { font-size: 1.35rem; font-weight: 800; padding: 14px; width: 100%; border-radius: 10px; }
   button.danger { color: var(--danger); }
-  button.danger.armed { background: var(--danger); color: #fff; border-color: transparent; }
+  button.danger.armed { background: var(--danger); color: #fff; }
   button:disabled { opacity: .45; cursor: default; }
-  label { font-size: .9rem; }
-  .player { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 4px 0; min-width: 0; }
-  .player .pname { font-weight: 600; font-size: .92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .captured { display: flex; align-items: center; min-width: 0; }
-  .captured svg { width: 22px; height: 22px; margin-right: -7px; flex: none; }
-  .captured .lead { margin-left: 12px; font-size: .85rem; font-weight: 600; color: var(--muted); }
-  textarea { width: 100%; min-height: 90px; resize: vertical; font: .8rem ui-monospace, Menlo, Consolas, monospace; padding: 8px;
-    border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); margin-bottom: 8px; }
+  .link { background: transparent; box-shadow: none; color: var(--muted); padding: 4px 6px; font-size: .85rem; }
+  .link:hover:not(:disabled) { background: transparent; color: var(--text); text-decoration: underline; }
+  .section { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin: 18px 0 8px; }
+  textarea { width: 100%; min-height: 180px; resize: vertical; font: .8rem ui-monospace, Menlo, Consolas, monospace; padding: 10px;
+    border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); margin-bottom: 10px; }
   .err { color: var(--danger); font-size: .85rem; margin: 0 0 8px; }
-  .moves { max-height: 300px; overflow-y: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9rem;
-    display: grid; grid-template-columns: 34px 1fr 1fr; row-gap: 2px; }
-  .moves .n { color: var(--muted); padding-top: 2px; }
-  .mv { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px; border-radius: 4px; }
-  .review-on .mv { cursor: pointer; }
-  .mv.cur { background: var(--select); }
+  .hint { color: var(--muted); font-size: .85rem; line-height: 1.45; margin: 0 0 12px; }
+
+  /* Move list */
+  .moves { font-size: .9rem; display: grid; grid-template-columns: 40px 1fr 1fr; row-gap: 0; }
+  .moves .n { color: var(--muted); padding: 5px 0 5px 4px; }
+  .moves > span:nth-child(6n+1), .moves > span:nth-child(6n+2), .moves > span:nth-child(6n+3) { background: rgba(255,255,255,.025); }
+  .moves > span { display: flex; align-items: center; }
+  .mv { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border-radius: 3px; font-weight: 600; color: var(--text-2); }
+  .review-on .mv, .moves .mv { cursor: pointer; }
+  .mv:hover { background: var(--panel-3); }
+  .mv.cur { background: #4a4846; color: #fff; box-shadow: inset 0 -2px 0 #6b6966; }
   .mv svg { width: 16px; height: 16px; flex: none; }
+  .moves .empty { grid-column: 1 / -1; color: var(--muted); font-size: .88rem; padding: 6px 4px; }
   .var { grid-column: 1 / -1; margin: 2px 0 4px 18px; padding: 4px 6px; border-left: 3px solid var(--accent); background: var(--panel-2);
-    border-radius: 0 6px 6px 0; font-size: .85rem; line-height: 1.7; }
+    border-radius: 0 6px 6px 0; font-size: .85rem; line-height: 1.8; display: block !important; }
   .var .vn { color: var(--muted); margin-left: 2px; }
-  .vdel { padding: 0 6px; margin-left: 4px; font-size: .8rem; line-height: 1.4; background: transparent; }
+  .vdel { padding: 0 6px; margin-left: 4px; font-size: .8rem; line-height: 1.4; background: transparent; box-shadow: none; }
   .tag { display: inline-block; font-size: .7rem; padding: 1px 6px; border-radius: 4px; background: var(--accent); color: #fff; vertical-align: 1px; }
-  .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: none; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
+
+  .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: none; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
   .modal.open { display: flex; }
-  .modal .box { background: var(--panel); border-radius: 14px; padding: 18px; text-align: center; max-width: 380px; width: 100%; }
+  .modal .box { background: var(--panel); border-radius: 10px; padding: 22px; text-align: center; max-width: 380px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,.5); }
+  .modal .box .row > button { flex: 1 1 100%; }
   .promo { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
-  .promo button { width: 72px; height: 72px; padding: 4px; background: #d5d2cb; }
+  .promo button { width: 72px; height: 72px; padding: 4px; background: #d5d2cb; flex: none; }
   .promo svg { width: 100%; height: 100%; }
 
   /* Review */
-  .review-card { display: none; }
-  .review-on .review-card { display: block; }
-  .progress { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin: 6px 0 10px; }
+  .progress { height: 4px; background: var(--panel-3); border-radius: 2px; overflow: hidden; margin: 6px 0 4px; }
   .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
-  .acc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
-  .acc div { background: var(--panel-2); border-radius: 8px; padding: 8px; text-align: center; }
-  .acc b { display: block; font-size: 1.4rem; }
-  .acc span { font-size: .8rem; color: var(--muted); }
-  .comment { display: flex; gap: 10px; align-items: flex-start; background: var(--panel-2); border-radius: 8px; padding: 10px; min-height: 58px; margin-bottom: 10px; font-size: .92rem; }
-  .comment svg { width: 30px; height: 30px; flex: none; }
-  .comment .ev { color: var(--muted); font-size: .82rem; margin-top: 2px; }
-  .graph { width: 100%; height: 64px; display: block; border-radius: 6px; cursor: pointer; margin-bottom: 10px; }
-  .nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
-  .counts { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; font-size: .88rem; align-items: center; }
-  .counts .lbl { display: flex; align-items: center; gap: 6px; }
-  .counts svg { width: 18px; height: 18px; }
-  .counts .h { color: var(--muted); font-size: .75rem; text-align: center; }
-  .counts .v { text-align: center; font-variant-numeric: tabular-nums; }
+  .rv-status { font-size: .8rem; color: var(--muted); }
+  .coach { flex: none; display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px 10px; border-bottom: 1px solid var(--line); }
+  .coach .face { width: 52px; height: 52px; flex: none; border-radius: 50%; background: var(--panel-3); display: flex; align-items: center; justify-content: center; }
+  .coach .face svg { width: 44px; height: 44px; }
+  .bubble { position: relative; flex: 1; background: #fff; color: #312e2b; border-radius: 10px; padding: 10px 12px; font-size: .92rem; line-height: 1.4; min-height: 52px; }
+  .bubble::before { content: ""; position: absolute; left: -7px; top: 18px; border: 7px solid transparent; border-left: 0; border-right-color: #fff; }
+  .bubble .head { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+  .bubble .head svg { width: 22px; height: 22px; flex: none; }
+  .bubble .chip { margin-left: auto; font-size: .82rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: #e8e6e3; color: #312e2b; white-space: nowrap; }
+  .bubble .chip.neg { background: #403d39; color: #fff; }
+  .bubble .sub { margin-top: 4px; color: #4b4847; }
+  .bubble .line { margin-top: 6px; font-size: .8rem; color: #6f6a65; }
+  .graph { width: 100%; height: 76px; display: block; border-radius: 4px; cursor: pointer; margin-bottom: 14px; }
+  .sumtab { display: grid; grid-template-columns: 1fr 86px 34px 86px; gap: 5px 0; align-items: center; font-size: .95rem; }
+  .sumtab .hd { font-size: .82rem; font-weight: 700; color: var(--text-2); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sumtab .lbl { font-weight: 600; color: var(--text-2); }
+  .sumtab .v { text-align: center; font-weight: 800; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .sumtab .ic { display: flex; justify-content: center; }
+  .sumtab .ic svg { width: 24px; height: 24px; }
+  .sumtab .box { justify-self: center; min-width: 74px; text-align: center; font-weight: 800; font-size: 1.15rem; padding: 7px 8px; border-radius: 5px; background: #fff; color: #312e2b; }
+  .sumtab .box.b { background: var(--panel-2); color: #fff; }
+  .sumtab .sep { grid-column: 1 / -1; height: 1px; background: var(--line); margin: 6px 0; }
+  .sumtab .avatar { justify-self: center; width: 54px; height: 54px; }
+  .sumtab .avatar svg { width: 46px; height: 46px; }
+  .nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .nav button { font-size: 1.15rem; padding: 10px 0; }
+  .rv-moves { margin-top: 4px; }
+
+  /* Narrow screens: board on top, panel below */
+  @media (max-width: 960px) {
+    :root { --board: min(calc(100vw - 32px - 34px), 640px); }
+    body { padding: 12px 16px; }
+    .app { flex-direction: column; align-items: center; gap: 12px; }
+    .panel { width: calc(var(--board) + 34px); height: min(80vh, 640px); }
+  }
 </style>
 </head>
 <body>
@@ -161,10 +220,7 @@
 </svg>
 
 <div class="app" id="app">
-  <div class="main">
-    <h1>Stone Chess</h1>
-    <p class="sub">Play a friend or a computer opponent rated 1000 to 2400, then review your game with Stockfish. Everything runs on your device.</p>
-    <div class="status" id="status"></div>
+  <div class="board-col">
     <div class="player" id="plTop"></div>
     <div class="board-row">
       <div class="evalbar" id="evalbar"><div class="fill" id="evalfill"></div><span class="num" id="evalnum"></span></div>
@@ -173,68 +229,96 @@
     <div class="player" id="plBottom"></div>
   </div>
 
-  <div class="side">
-    <div class="card review-card">
-      <h2>Game review</h2>
-      <div id="reviewProgressText" style="font-size:.85rem;color:var(--muted)"></div>
-      <div id="engineLabel" style="font-size:.78rem;color:var(--muted);margin-top:2px"></div>
-      <div class="progress"><div id="reviewProgress"></div></div>
-      <div class="acc">
-        <div><b id="accW">–</b><span>White accuracy</span></div>
-        <div><b id="accB">–</b><span>Black accuracy</span></div>
-        <div><b id="eloW">–</b><span>White played like</span></div>
-        <div><b id="eloB">–</b><span>Black played like</span></div>
-      </div>
-      <div class="comment" id="comment"></div>
-      <svg class="graph" id="graph" viewBox="0 0 300 64" preserveAspectRatio="none"></svg>
-      <div class="nav">
-        <button id="navFirst" title="Start">⏮</button><button id="navPrev" title="Previous (←)">◀</button>
-        <button id="navNext" title="Next (→)">▶</button><button id="navLast" title="End">⏭</button>
-      </div>
-      <div class="counts" id="counts"></div>
-      <div class="row" style="margin-top:12px">
-        <button id="deepReview" title="Re-analyze with the full Stockfish 19 at 1.5 s per position. Downloads about 99 MB the first time.">Deep review</button>
-        <button id="exitReview">Exit review</button>
-      </div>
+  <aside class="panel">
+    <div class="tabs" role="tablist">
+      <button class="tab on" data-tab="play" role="tab">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5a3.2 3.2 0 0 0-1.9 5.8C8.4 9.2 7.6 10.8 7.6 12.4h8.8c0-1.6-.8-3.2-2.5-4.1A3.2 3.2 0 0 0 12 2.5zM8.4 13.8c-.3 2.2-1.3 3.9-2.6 5h12.4c-1.3-1.1-2.3-2.8-2.6-5zM5 20.2h14v1.8H5z"/></svg>Play</button>
+      <button class="tab" data-tab="review" role="tab" id="reviewTab">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.6l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.1l-5.4 3 1.2-6-4.5-4.2 6.1-.7z"/></svg>Review</button>
+      <button class="tab" data-tab="import" role="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M4 17v3h16v-3"/></svg>Import</button>
     </div>
 
-    <div class="card">
-      <h2>Game</h2>
-      <div class="field"><label for="mode">Opponent</label>
-        <select id="mode">
-          <option value="ai-b">Computer (you play White)</option>
-          <option value="ai-w">Computer (you play Black)</option>
-          <option value="human">Two players</option>
-        </select>
+    <section class="pane on" id="pane-play">
+      <div class="pane-body">
+        <div class="status" id="status"></div>
+        <div class="field"><label for="mode">Opponent</label>
+          <select id="mode">
+            <option value="ai-b">Computer (you play White)</option>
+            <option value="ai-w">Computer (you play Black)</option>
+            <option value="human">Two players</option>
+          </select>
+        </div>
+        <div class="field"><label for="level">Bot rating</label><select id="level"></select></div>
+        <div class="field"><label for="pieceSet">Pieces</label>
+          <select id="pieceSet">
+            <option value="classic">Classic</option>
+            <option value="unicorn">Unicorns &amp; Eiffel Towers</option>
+          </select>
+        </div>
+        <div class="section">Moves</div>
+        <div class="moves" id="moves"></div>
       </div>
-      <div class="field"><label for="level">Bot rating</label><select id="level"></select></div>
-      <div class="field"><label for="pieceSet">Pieces</label>
-        <select id="pieceSet">
-          <option value="classic">Classic</option>
-          <option value="unicorn">Unicorns &amp; Eiffel Towers</option>
-        </select>
+      <div class="pane-foot">
+        <div class="row">
+          <button class="danger" id="resign">Resign</button>
+          <button id="undo">Undo</button>
+          <button id="flip">Flip</button>
+          <button id="reviewBtn">Review</button>
+        </div>
+        <button class="primary big" id="newGame" title="Start a new game">New game</button>
       </div>
-      <div class="row">
-        <button class="primary" id="newGame" title="Start a new game">↻ New game</button>
-        <button class="danger" id="resign">Resign</button>
-        <button id="undo">Undo</button>
-        <button id="flip">Flip</button>
-        <button id="reviewBtn">Review game</button>
-      </div>
-    </div>
+    </section>
 
-    <div class="card">
-      <h2>Import game</h2>
-      <textarea id="pgnInput" spellcheck="false" placeholder="Paste a PGN from chess.com or lichess"></textarea>
-      <p class="err" id="pgnError" hidden></p>
-      <button class="primary" id="pgnReview">Review this game</button>
-    </div>
+    <section class="pane" id="pane-review">
+      <div class="pane-head">
+        <button class="icon-btn" id="rvBack" title="Back to the summary">←</button>
+        <div class="title">Game Review</div>
+        <button class="icon-btn" id="exitReview" title="Exit review">✕</button>
+      </div>
+      <div class="coach"><div class="face" id="coachFace"></div><div class="bubble" id="comment"></div></div>
+      <div class="pane-body" id="rvBody">
+        <div id="rvSummary">
+          <svg class="graph" id="graph" viewBox="0 0 300 76" preserveAspectRatio="none"></svg>
+          <div class="sumtab" id="sumtab"></div>
+          <div style="margin-top:14px">
+            <div class="rv-status" id="reviewProgressText"></div>
+            <div class="progress"><div id="reviewProgress"></div></div>
+            <div class="rv-status" id="engineLabel"></div>
+          </div>
+        </div>
+        <div id="rvSteps" hidden>
+          <div class="moves rv-moves" id="rvMoves"></div>
+        </div>
+      </div>
+      <div class="pane-foot">
+        <div id="footSummary">
+          <button class="primary big" id="startSteps">Start Review</button>
+          <div class="row" style="margin-top:10px;justify-content:center">
+            <button class="link" id="deepReview" title="Re-analyze with the full Stockfish 19 at 1M nodes per position. Downloads about 99 MB the first time.">Deep review</button>
+          </div>
+        </div>
+        <div id="footSteps" hidden>
+          <svg class="graph" id="graph2" viewBox="0 0 300 76" preserveAspectRatio="none" style="height:48px;margin:0"></svg>
+          <div class="nav">
+            <button id="navFirst" title="Start">⏮</button><button id="navPrev" title="Previous (←)">◀</button>
+            <button id="navNext" title="Next (→)">▶</button><button id="navLast" title="End">⏭</button>
+          </div>
+        </div>
+      </div>
+    </section>
 
-    <div class="card">
-      <h2>Moves</h2>
-      <div class="moves" id="moves"></div>
-    </div>
-  </div>
+    <section class="pane" id="pane-import">
+      <div class="pane-body">
+        <p class="hint">Paste a PGN from chess.com or lichess to review it. Games from chess.com keep chess.com's own opening book.</p>
+        <textarea id="pgnInput" spellcheck="false" placeholder="[Event &quot;Live Chess&quot;]&#10;...&#10;1. e4 e5 2. Nf3 ..."></textarea>
+        <p class="err" id="pgnError" hidden></p>
+      </div>
+      <div class="pane-foot">
+        <button class="primary big" id="pgnReview">Review this game</button>
+      </div>
+    </section>
+  </aside>
 </div>
 
 <div class="modal" id="promoModal">
@@ -250,7 +334,7 @@
     <h2 id="endTitle" style="margin:6px 0"></h2>
     <p id="endText" style="color:var(--muted)"></p>
     <div class="row" style="justify-content:center">
-      <button class="primary" id="endReview">Review game</button>
+      <button class="primary big" id="endReview">Game Review</button>
       <button id="endNew">New game</button>
       <button id="endClose">View board</button>
     </div>
@@ -259,7 +343,9 @@
 
 <script src="engine.js?v=2"></script>
 <script src="ai.js?v=2"></script>
-<script src="review-stats.js?v=3"></script>
+<script src="review-stats.js?v=4"></script>
+<script src="openings.js?v=1"></script>
+<script src="openings-core.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -355,9 +441,10 @@
     book: { label: 'Book', color: '#a88865', icon: '<path d="M4 5h4.5c1 0 1.5.6 1.5 1.5V16c0-.8-.6-1.2-1.4-1.2H4z M16 5h-4.5c-1 0-1.5.6-1.5 1.5V16c0-.8.6-1.2 1.4-1.2H16z" fill="#fff"/>' },
     inaccuracy: { label: 'Inaccuracy', color: '#f0b93a', text: '?!' },
     mistake: { label: 'Mistake', color: '#ff9b49', text: '?' },
+    miss: { label: 'Miss', color: '#ee6b55', icon: '<path d="M6.6 6.6l6.8 6.8M13.4 6.6l-6.8 6.8" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>' },
     blunder: { label: 'Blunder', color: '#e6402d', text: '??' },
   };
-  const CLS_ORDER = ['brilliant', 'great', 'best', 'excellent', 'good', 'book', 'inaccuracy', 'mistake', 'blunder'];
+  const CLS_ORDER = ['brilliant', 'great', 'book', 'best', 'excellent', 'good', 'inaccuracy', 'mistake', 'miss', 'blunder'];
   function clsIcon(k, cls = '') {
     const c = CLS[k];
     const inner = c.text
@@ -366,19 +453,14 @@
     return `<svg class="${cls}" viewBox="0 0 20 20" aria-label="${c.label}"><circle cx="10" cy="10" r="9.5" fill="${c.color}"/>${inner}</svg>`;
   }
 
-  const BOOK = [
-    'e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6 e1g1 f8e7', 'e2e4 e7e5 g1f3 b8c6 f1b5 g8f6 e1g1', 'e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 c2c3 g8f6 d2d4',
-    'e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 d2d3', 'e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4', 'e2e4 e7e5 g1f3 b8c6 b1c3 g8f6',
-    'e2e4 e7e5 g1f3 g8f6 f3e5 d7d6 e5f3 f6e4', 'e2e4 e7e5 g1f3 d7d6 d2d4', 'e2e4 e7e5 b1c3 g8f6', 'e2e4 e7e5 f2f4',
-    'e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 a7a6', 'e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4', 'e2e4 c7c5 g1f3 e7e6 d2d4 c5d4 f3d4',
-    'e2e4 c7c5 b1c3 b8c6', 'e2e4 e7e6 d2d4 d7d5 b1c3 g8f6', 'e2e4 e7e6 d2d4 d7d5 e4e5 c7c5', 'e2e4 c7c6 d2d4 d7d5 b1c3 d5e4 c3e4',
-    'e2e4 c7c6 d2d4 d7d5 e4e5 c8f5', 'e2e4 d7d5 e4d5 d8d5 b1c3 d5a5', 'e2e4 d7d6 d2d4 g8f6 b1c3 g7g6', 'e2e4 g7g6 d2d4 f8g7',
-    'd2d4 d7d5 c2c4 e7e6 b1c3 g8f6 c1g5', 'd2d4 d7d5 c2c4 c7c6 g1f3 g8f6', 'd2d4 d7d5 c2c4 d5c4 g1f3 g8f6',
-    'd2d4 g8f6 c2c4 g7g6 b1c3 f8g7 e2e4 d7d6', 'd2d4 g8f6 c2c4 e7e6 b1c3 f8b4', 'd2d4 g8f6 c2c4 e7e6 g1f3 b7b6',
-    'd2d4 d7d5 g1f3 g8f6 c1f4', 'd2d4 d7d5 c1f4 g8f6 e2e3', 'd2d4 f7f5', 'c2c4 e7e5 b1c3 g8f6 g1f3 b8c6', 'c2c4 g8f6 b1c3 e7e6',
-    'g1f3 d7d5 g2g3 g8f6 f1g2', 'g1f3 g8f6 c2c4',
-  ].map((s) => s.split(' '));
-  const isBook = (moves, i) => BOOK.some((line) => line.length > i && moves.slice(0, i + 1).every((u, k) => line[k] === u));
+  // Opening book: chess.com's own line from an imported PGN's [ECOUrl], else lichess's openings list
+  // (openings.js). A move is book while every position up to it is in the book.
+  const OB = window.OpeningBook;
+  function bookPlies(states, ecoPlies = 0) { // states[k] = position after ply k (from the game start)
+    let k = 0;
+    while (k < states.length && (k < ecoPlies || OB.inBook(E.toFEN(states[k])))) k++;
+    return k;
+  }
 
   // ---- Engines ----
   // Everything runs locally. The built-in engine (ai.js) and Stockfish both run in Web Workers
@@ -546,7 +628,7 @@
       if (j.elo) this.send(`setoption name UCI_Elo value ${j.elo}`);
       this.send(`setoption name MultiPV value ${j.multipv || 1}`);
       this.send('position startpos' + (j.moves.length ? ' moves ' + j.moves.join(' ') : ''));
-      this.send(`go movetime ${j.movetime}`);
+      this.send(j.nodes ? `go nodes ${j.nodes}` : `go movetime ${j.movetime}`);
     }
     onLine(line) {
       const j = this.job;
@@ -591,8 +673,10 @@
   stockfish.load().then((ok) => { sfOk = ok; render(); });
   function cancelEngine() { gen++; builtin.cancel(); if (sfOk) stockfish.cancel(); if (deepStockfish.w) deepStockfish.cancel(); }
 
-  const REVIEW_MS = 500; // Stockfish per position in review (built-in fallback: 900 ms)
-  const DEEP_REVIEW_MS = 1500; // full Stockfish per position in deep review
+  // Review searches a fixed number of nodes per position rather than a fixed time, so the same game
+  // always gets the same review, whatever the device or its load (about 0.6 s per position on a laptop).
+  const REVIEW_NODES = 300000; // Stockfish 19 Lite (built-in fallback: 900 ms)
+  const DEEP_REVIEW_NODES = 1000000; // full Stockfish 19 in deep review
   const LEVELS = AI.LEVELS.concat([
     // Stockfish Lite's Elo limiter reads about 140 low, so 2540 here plays at 2400 (measured; see README).
     { elo: 2400, engine: 'stockfish', uciElo: 2540, movetime: 500, fallback: { maxDepth: 64, timeMs: 1500 } },
@@ -612,16 +696,16 @@
   async function analyze(moves, urgent) {
     const g = gen;
     let r = null;
-    if (review && review.deep && await deepStockfish.load()) r = await deepStockfish.request({ moves, movetime: DEEP_REVIEW_MS, multipv: 2 }, urgent);
-    else if (await stockfish.load()) r = await stockfish.request({ moves, movetime: REVIEW_MS, multipv: 2 }, urgent);
+    if (review && review.deep && await deepStockfish.load()) r = await deepStockfish.request({ moves, nodes: DEEP_REVIEW_NODES, multipv: 2 }, urgent);
+    else if (await stockfish.load()) r = await stockfish.request({ moves, nodes: REVIEW_NODES, multipv: 2 }, urgent);
     else {
       const t = await builtin.think({ fen: E.START_FEN, moves, timeMs: 900, window: 250 });
       if (t) r = { best: t.best, score: t.bestScore, second: t.lines[1] ? t.lines[1].score : null, pv: [t.best] };
     }
     return g === gen ? r : null;
   }
-  const engineLabel = () => (review && review.deep ? `Stockfish 19 (full), ${DEEP_REVIEW_MS / 1000} s per position, running on your device`
-    : sfOk === null ? 'Loading Stockfish…' : sfOk ? 'Stockfish 19 Lite, running on your device' : 'Built-in engine (Stockfish could not start)');
+  const engineLabel = () => (review && review.deep ? `Stockfish 19 (full), ${DEEP_REVIEW_NODES / 1e6}M nodes per position, running on your device`
+    : sfOk === null ? 'Loading Stockfish…' : sfOk ? `Stockfish 19 Lite, ${REVIEW_NODES / 1000}k nodes per position, on your device` : 'Built-in engine (Stockfish could not start)');
 
   // ---- State ----
   const $ = (id) => document.getElementById(id);
@@ -630,6 +714,8 @@
   levelEl.value = '2';
   let game, history, sans, ucis, selected, flipped = false, thinking = false, endShown = false, pendingPromo = null, resigned = null;
   let review = null;
+  let tab = 'play';
+  function setTab(t) { tab = t; render(); }
   let imported = null; // PGN header tags of an imported game
 
   const positions = () => history.concat([game]);
@@ -851,32 +937,39 @@
   }
 
   // Moves too natural to call Great even when they are the only good one: getting out of check,
-  // recapturing, or taking a piece worth at least as much as the capturer (finishing a trade).
+  // recapturing on the square just taken, or taking a piece nobody defends.
   function isObvious(before, next) {
-    const m = next.lastMove, V = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+    const m = next.lastMove;
     if (E.inCheck(before)) return true;
     if (!next.captured) return false;
     if (before.captured && before.lastMove && before.lastMove.to === m.to) return true;
-    return V[next.captured.t] >= V[before.board[m.from].t];
+    return !E.legalMoves(next).some((x) => x.to === m.to);
   }
 
-  // Classify the move from `before` to `next`, given engine analysis of both positions (side-to-move view).
-  function classifyMove(before, next, a, b, uci, movesSoFar) {
-    const wpBefore = winPct(a.score), wpAfter = winPct(-b.score);
-    const loss = Math.max(0, wpBefore - wpAfter);
+  // Classify the move from `before` to `next`, given engine analysis of both positions (side-to-move
+  // view). Labels follow chess.com: Best is only the engine's top move, the rest are graded by the
+  // expected points given away (Excellent ≤ 2, Good ≤ 5, Inaccuracy ≤ 10, Mistake ≤ 20, else Blunder),
+  // and a Mistake or Blunder right after the opponent's own Mistake or Blunder is a Miss: the chance
+  // to punish it went begging. prevLoss is the opponent's previous move's loss (null if unknown).
+  const EP = RS.expectedPoints;
+  function classifyMove(before, next, a, b, uci, book, prevLoss) {
+    const epBefore = EP(a.score), epAfter = EP(-b.score);
+    const loss = Math.max(0, epBefore - epAfter);
     let c;
-    if (isBook(movesSoFar, movesSoFar.length - 1)) c = 'book';
-    else if (uci === a.best || loss < 0.5) {
+    if (book) c = 'book';
+    else if (uci === a.best || loss === 0) {
       c = 'best';
-      if (uci === a.best && wpBefore < 97 && wpAfter >= 45 && isSacrifice(before, next)) c = 'brilliant';
-      else if (uci === a.best && a.second !== null && wpBefore - winPct(a.second) >= 18 && wpAfter >= 30 && wpBefore < 95
+      if (uci === a.best && epBefore < 97 && epAfter >= 45 && isSacrifice(before, next)) c = 'brilliant';
+      else if (uci === a.best && a.second !== null && epBefore - EP(a.second) >= 12 && epAfter >= 30 && epBefore < 95
         && !isObvious(before, next)) c = 'great';
     } else if (loss <= 2) c = 'excellent';
     else if (loss <= 5) c = 'good';
     else if (loss <= 10) c = 'inaccuracy';
+    else if (prevLoss !== null && prevLoss > 10 && loss <= prevLoss + 5) c = 'miss';
     else if (loss <= 20) c = 'mistake';
     else c = 'blunder';
     const cpLoss = Math.max(0, RS.cpClamp(a.score) - RS.cpClamp(-b.score));
+    const wpBefore = winPct(a.score), wpAfter = winPct(-b.score);
     return { c, loss, cpLoss, acc: c === 'book' ? 100 : RS.moveAccuracy(loss), counted: c !== 'book', decided: RS.decided(wpBefore, wpAfter) };
   }
 
@@ -897,9 +990,12 @@
     closeModal('endModal');
     const pos = positions();
     const cur = review ? review.cur : { line: -1, k: pos.length - 1 };
-    review = { cur: { line: -1, k: cur.line < 0 ? cur.k : pos.length - 1 }, analysis: new Array(pos.length), cls: [], done: 0, lines: [], deep, loading: deep };
+    const ecoPlies = imported ? OB.ecoUrlPlies(imported.ECOUrl, sans) : 0;
+    review = { cur: { line: -1, k: cur.line < 0 ? cur.k : pos.length - 1 }, analysis: new Array(pos.length), cls: [], done: 0, lines: [], deep, loading: deep,
+      book: bookPlies(pos.slice(1), ecoPlies), view: review ? review.view : 'summary' };
     const myReview = review;
     deepError = '';
+    tab = 'review';
     render();
     if (deep) {
       const ok = await deepStockfish.load();
@@ -920,11 +1016,15 @@
         if (!review.analysis[i]) review.analysis[i] = a;
       }
       review.done = i + 1;
-      if (i > 0) review.cls[i - 1] = classifyMove(pos[i - 1], pos[i], review.analysis[i - 1], review.analysis[i], ucis[i - 1], ucis.slice(0, i));
+      if (i > 0) {
+        const prev = review.cls[i - 2];
+        review.cls[i - 1] = classifyMove(pos[i - 1], pos[i], review.analysis[i - 1], review.analysis[i], ucis[i - 1],
+          i - 1 < review.book, prev ? prev.loss : null);
+      }
       render();
     }
   }
-  function exitReview() { cancelEngine(); review = null; selected = null; render(); maybeAI(); }
+  function exitReview() { cancelEngine(); review = null; selected = null; tab = 'play'; render(); maybeAI(); }
 
   // The position being viewed in review: on the main line, or k moves into variation `line`.
   function curNode() {
@@ -952,6 +1052,7 @@
     const c = review.cur, node = curNode(), u = uciOf(m);
     const next = E.makeMove(node.state, m), san = E.san(node.state, m);
     selected = null;
+    review.view = 'steps';
     if (c.line < 0) {
       if (c.k < ucis.length && ucis[c.k] === u) { review.cur = { line: -1, k: c.k + 1 }; render(); return; }
       let li = review.lines.findIndex((l) => l.start === c.k && l.moves[0] === u);
@@ -981,7 +1082,9 @@
     const a = L.analysis[k - 1] && L.states[k - 1] === state ? L.analysis[k - 1] : await analysisFor(state, moves, true);
     if (!a || review !== myReview || L.states[k - 1] !== state) return;
     L.analysis[k - 1] = a;
-    L.cls[k - 1] = classifyMove(prevState, state, prev, a, L.moves[k - 1], moves);
+    const book = review.book >= L.start && bookPlies(L.states.slice(0, k)) === k;
+    const prevCls = k > 1 ? L.cls[k - 2] : review.cls[L.start - 1];
+    L.cls[k - 1] = classifyMove(prevState, state, prev, a, L.moves[k - 1], book, prevCls ? prevCls.loss : null);
     render();
   }
 
@@ -989,7 +1092,7 @@
     if (!review) return;
     if (line < 0) k = Math.max(0, Math.min(positions().length - 1, k));
     else k = Math.max(1, Math.min(review.lines[line].moves.length, k));
-    review.cur = { line, k }; selected = null; render();
+    review.cur = { line, k }; review.view = 'steps'; selected = null; render();
   }
   function step(d) {
     const c = review.cur;
@@ -1018,8 +1121,35 @@
     return out.join(' ');
   }
 
+  // Expected-points loss of each main-line move, for the summary's "turning point".
+  function worstMove() {
+    let w = -1;
+    review.cls.forEach((x, k) => { if (x && x.counted && x.loss >= 10 && (w < 0 || x.loss > review.cls[w].loss)) w = k; });
+    return w;
+  }
+  function graphSVG(pts, n, H) {
+    const W = 300;
+    let svg = `<rect width="${W}" height="${H}" fill="#403d39"/>`;
+    if (pts.length) svg += `<path d="M0 ${H} ${pts.map((p) => `L${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')} L${pts[pts.length - 1][0].toFixed(1)} ${H} Z" fill="#fff"/>`;
+    svg += `<line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke="#888" stroke-width=".6" stroke-dasharray="3 3"/>`;
+    review.cls.forEach((x, k) => {
+      if (x && ['blunder', 'mistake', 'miss', 'brilliant', 'great'].includes(x.c) && pts[k + 1]) {
+        svg += `<circle cx="${pts[k + 1][0]}" cy="${pts[k + 1][1]}" r="3.2" fill="${CLS[x.c].color}" stroke="#222" stroke-width=".6"/>`;
+      }
+    });
+    const mainIdx = review.cur.line < 0 ? review.cur.k : review.lines[review.cur.line].start;
+    if (review.view === 'steps') {
+      const cx = n > 1 ? (mainIdx / (n - 1)) * W : 0;
+      svg += `<line x1="${cx}" x2="${cx}" y1="0" y2="${H}" stroke="#81b64c" stroke-width="2"/>`;
+    }
+    return svg;
+  }
+
   function renderReview() {
-    const pos = positions(), n = pos.length, node = curNode();
+    const pos = positions(), n = pos.length, node = curNode(), steps = review.view === 'steps';
+    $('rvSummary').hidden = steps; $('rvSteps').hidden = !steps;
+    $('footSummary').hidden = steps; $('footSteps').hidden = !steps;
+    $('rvBack').style.visibility = steps ? 'visible' : 'hidden';
     $('reviewProgress').style.width = (100 * review.done / n) + '%';
     const p = deepStockfish.progress;
     $('reviewProgressText').textContent = review.loading
@@ -1028,50 +1158,74 @@
         : 'Starting full Stockfish…')
       : (deepError ? deepError + ' ' : '') + (review.done < n
         ? `Analyzing… ${review.done}/${n} positions`
-        : `Analyzed ${n - 1} moves. Play moves on the board to explore variations.`);
+        : `Analyzed ${n - 1} moves.`);
     $('deepReview').disabled = review.deep;
-    $('deepReview').textContent = review.deep || deepCached ? 'Deep review' : 'Deep review (≈99 MB download)';
+    $('deepReview').textContent = review.deep ? 'Deep review done' : deepCached ? 'Deep review' : 'Deep review (≈99 MB download)';
     $('engineLabel').textContent = 'Engine: ' + engineLabel();
-    // Accuracy and estimated rating over the game's main line (book moves don't count, nor do
-    // moves in already-decided positions for the rating)
-    let lastWin = 50;
-    const whiteWin = pos.map((st, k) => {
-      const an = review.analysis[k];
-      if (an) lastWin = winPct(st.turn === 'w' ? an.score : -an.score);
-      return lastWin;
-    });
+
+    // Accuracy and game rating over the game's main line (book moves don't count)
     const moves = pos.slice(1).map((_, k) => review.cls[k] || null);
     const cpLoss = moves.map((m) => (m && m.counted && !m.decided ? m.cpLoss : null));
+    const stats = {};
     for (const c of ['w', 'b']) {
-      const acc = RS.gameAccuracy(whiteWin, moves, c);
-      const counted = cpLoss.filter((x, k) => x !== null && (k % 2 === 0) === (c === 'w')).length;
-      const elo = RS.estimateElo(RS.acpl(cpLoss, c), counted);
-      $(c === 'w' ? 'accW' : 'accB').textContent = acc === null ? '–' : acc.toFixed(1);
-      $(c === 'w' ? 'eloW' : 'eloB').textContent = elo === null ? '–' : '≈' + elo;
-      $(c === 'w' ? 'eloW' : 'eloB').title = elo === null
-        ? `Needs at least ${RS.MIN_MOVES_FOR_ELO} non-book moves before the game is decided`
-        : `Average centipawn loss ${RS.acpl(cpLoss, c).toFixed(0)} over ${counted} moves`;
+      const acc = RS.gameAccuracy(null, moves, c);
+      const counted = moves.filter((m, k) => m && m.counted && (k % 2 === 0) === (c === 'w')).length;
+      const al = RS.acpl(cpLoss, c);
+      stats[c] = { acc, rating: RS.gameRating(acc, counted), acpl: al, counted };
     }
-    // Comment on the move that led to the viewed position, plus the engine's line from here
+
+    // Summary: players, accuracy, move counts and game rating, laid out like chess.com's
+    if (!steps) {
+      const name = (c) => esc(playerInfo(c).name);
+      const tip = (c) => stats[c].acpl === null ? '' : ` title="Average centipawn loss ${stats[c].acpl.toFixed(0)}"`;
+      let h = `<span></span><span class="hd">${name('w')}</span><span></span><span class="hd">${name('b')}</span>`;
+      h += `<span class="lbl">Players</span>${avatar('w')}<span></span>${avatar('b')}`;
+      h += `<span class="lbl">Accuracy</span><span class="box"${tip('w')}>${stats.w.acc === null ? '–' : stats.w.acc.toFixed(1)}</span><span></span>` +
+        `<span class="box b"${tip('b')}>${stats.b.acc === null ? '–' : stats.b.acc.toFixed(1)}</span><span class="sep"></span>`;
+      for (const k of CLS_ORDER) {
+        const cw = review.cls.filter((x, j) => x && x.c === k && j % 2 === 0).length;
+        const cb = review.cls.filter((x, j) => x && x.c === k && j % 2 === 1).length;
+        h += `<span class="lbl">${CLS[k].label}</span><span class="v" style="color:${CLS[k].color}">${cw}</span><span class="ic">${clsIcon(k)}</span><span class="v" style="color:${CLS[k].color}">${cb}</span>`;
+      }
+      const rt = (c) => (stats[c].rating === null ? '–' : stats[c].rating);
+      const rtip = `Needs at least ${RS.MIN_MOVES_FOR_RATING} non-book moves`;
+      h += `<span class="sep"></span><span class="lbl">Game Rating</span><span class="box"${stats.w.rating === null ? ` title="${rtip}"` : ''}>${rt('w')}</span><span></span>` +
+        `<span class="box b"${stats.b.rating === null ? ` title="${rtip}"` : ''}>${rt('b')}</span>`;
+      $('sumtab').innerHTML = h;
+    }
+
+    // Coach bubble: a summary of the game, or a comment on the move that led to the viewed position
     const cm = $('comment'), a = node.analysis, mv = node.move;
+    $('coachFace').innerHTML = pieceSVG('n', 'w', '');
     const ev = a ? (node.state.turn === 'w' ? a.score : -a.score) : null;
-    const evalTxt = ev !== null ? 'Evaluation ' + fmtEval(ev) : 'Analyzing…';
-    const line = a && a.pv && a.pv.length ? `<div class="ev">Best line: ${pvSan(node.state, a.pv)}</div>` : '';
+    const chip = ev !== null ? `<span class="chip${ev < 0 ? ' neg' : ''}">${fmtEval(ev)}</span>` : '';
+    const line = a && a.pv && a.pv.length ? `<div class="line">Best line: ${pvSan(node.state, a.pv, 8)}</div>` : '';
     const varTag = review.cur.line >= 0 ? '<span class="tag">Variation</span> ' : '';
-    if (!mv) cm.innerHTML = `<div><b>Starting position</b><div class="ev">${evalTxt}</div>${line}</div>`;
-    else if (!mv.cls) cm.innerHTML = `<div>${varTag}<b>${moveNo(mv.ply)}${mv.san}</b><div class="ev">Analyzing…</div></div>`;
+    if (!steps) {
+      let txt;
+      if (review.done < n) txt = 'Analyzing your game… the numbers fill in as Stockfish goes.';
+      else {
+        const gs = E.status(game), w = worstMove();
+        const res = resigned ? `${NAMES[other(resigned)]} won by resignation.` : gs.result === 'checkmate' ? `${NAMES[gs.winner]} won by checkmate.`
+          : gs.over ? `The game was drawn by ${drawReason(gs.result)}.` : '';
+        const turn = w >= 0 ? ` The turning point was <b>${moveNo(w)}${sans[w]}</b>, a ${CLS[review.cls[w].c].label.toLowerCase()}.` : ' Both sides kept the game under control.';
+        txt = (res + turn).trim();
+      }
+      cm.innerHTML = `<div>${txt}</div>`;
+    } else if (!mv) cm.innerHTML = `<div class="head">Starting position${chip}</div>${line}`;
+    else if (!mv.cls) cm.innerHTML = `<div class="head">${varTag}${mv.san}<span class="chip">…</span></div><div class="sub">Analyzing…</div>`;
     else {
       const k = mv.cls.c;
-      const phrases = { brilliant: 'is brilliant!', great: 'is a great move. It was the only move that holds.', best: 'is the best move.',
-        excellent: 'is excellent.', good: 'is a good move.', book: 'is a book move.', inaccuracy: 'is an inaccuracy.',
-        mistake: 'is a mistake.', blunder: 'is a blunder.' };
-      let bestTxt = '';
+      const phrases = { brilliant: 'is brilliant', great: 'is a great move', best: 'is best', excellent: 'is excellent', good: 'is good',
+        book: 'is a book move', inaccuracy: 'is an inaccuracy', mistake: 'is a mistake', miss: 'is a miss', blunder: 'is a blunder' };
+      let sub = k === 'great' ? 'The only move that keeps the advantage.' : k === 'miss' ? 'You missed a chance to punish the last move.' : '';
       if (mv.prevAnalysis && mv.prevAnalysis.best && mv.prevAnalysis.best !== mv.uci && !['book', 'best'].includes(k)) {
         const bm = findUci(mv.prevState, mv.prevAnalysis.best);
-        if (bm) bestTxt = ` The best move was <b>${E.san(mv.prevState, bm)}</b>.`;
+        if (bm) sub = (sub ? sub + ' ' : '') + `The best move was <b>${E.san(mv.prevState, bm)}</b>.`;
       }
-      cm.innerHTML = `${clsIcon(k)}<div>${varTag}<b>${moveNo(mv.ply)}${mv.san}</b> ${phrases[k]}${bestTxt}<div class="ev">${evalTxt}</div>${line}</div>`;
+      cm.innerHTML = `<div class="head">${clsIcon(k)}${varTag}<span>${mv.san} ${phrases[k]}</span>${chip}</div>${sub ? `<div class="sub">${sub}</div>` : ''}${line}`;
     }
+
     // Eval bar (White's share fills from White's side of the board)
     $('evalbar').classList.toggle('flipped', flipped);
     if (ev !== null) {
@@ -1081,33 +1235,15 @@
       num.className = 'num ' + ((ev >= 0) !== flipped ? 'bottom' : 'top');
     }
     // Evaluation graph (main line)
-    const g = $('graph'), W = 300, H = 64, pts = [];
+    const H = 76, pts = [];
     for (let k = 0; k < n; k++) {
       const an = review.analysis[k];
       if (!an) break;
       const cp = pos[k].turn === 'w' ? an.score : -an.score;
-      pts.push([n > 1 ? (k / (n - 1)) * W : 0, H - (winPct(cp) / 100) * H]);
+      pts.push([n > 1 ? (k / (n - 1)) * 300 : 0, H - (winPct(cp) / 100) * H]);
     }
-    let svg = `<rect width="${W}" height="${H}" fill="#403d39"/>`;
-    if (pts.length) svg += `<path d="M0 ${H} ${pts.map((p) => `L${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')} L${pts[pts.length - 1][0].toFixed(1)} ${H} Z" fill="#f2f2f2"/>`;
-    svg += `<line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke="#888" stroke-width=".6" stroke-dasharray="3 3"/>`;
-    review.cls.forEach((x, k) => {
-      if (x && ['blunder', 'mistake', 'brilliant', 'great'].includes(x.c) && pts[k + 1]) {
-        svg += `<circle cx="${pts[k + 1][0]}" cy="${pts[k + 1][1]}" r="3" fill="${CLS[x.c].color}" stroke="#222" stroke-width=".6"/>`;
-      }
-    });
-    const mainIdx = review.cur.line < 0 ? review.cur.k : review.lines[review.cur.line].start;
-    const cx = n > 1 ? (mainIdx / (n - 1)) * W : 0;
-    svg += `<line x1="${cx}" x2="${cx}" y1="0" y2="${H}" stroke="#81b64c" stroke-width="2"/>`;
-    g.innerHTML = svg;
-    // Classification counts (main line)
-    let html = '<span></span><span class="h">White</span><span class="h">Black</span>';
-    for (const k of CLS_ORDER) {
-      const cw = review.cls.filter((x, j) => x && x.c === k && j % 2 === 0).length;
-      const cb = review.cls.filter((x, j) => x && x.c === k && j % 2 === 1).length;
-      html += `<span class="lbl">${clsIcon(k)}${CLS[k].label}</span><span class="v" style="color:${cw ? CLS[k].color : 'var(--muted)'}">${cw}</span><span class="v" style="color:${cb ? CLS[k].color : 'var(--muted)'}">${cb}</span>`;
-    }
-    $('counts').innerHTML = html;
+    $(steps ? 'graph2' : 'graph').innerHTML = graphSVG(pts, n, H);
+
     const atStart = review.cur.line < 0 && review.cur.k === 0;
     const atEnd = review.cur.line < 0 ? review.cur.k === n - 1 : review.cur.k === review.lines[review.cur.line].moves.length;
     $('navFirst').disabled = $('navPrev').disabled = atStart;
@@ -1118,6 +1254,10 @@
   // ---- Rendering ----
   function render() {
     $('app').classList.toggle('review-on', !!review);
+    $('reviewTab').disabled = !review;
+    if (!review && tab === 'review') tab = 'play';
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === tab));
+    document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'pane-' + tab));
     const pos = positions();
     const node = review ? curNode() : null;
     const view = review ? node.state : game;
@@ -1165,7 +1305,7 @@
     // Status line
     const gs = gameStatus();
     let msg;
-    if (review) msg = review.cur.line >= 0 ? 'Game review: exploring a variation' : 'Game review';
+    if (review) msg = 'Game review in progress';
     else if (gs.over) {
       if (gs.result === 'checkmate') msg = `Checkmate! ${NAMES[gs.winner]} wins`;
       else if (gs.result === 'resign') msg = `${NAMES[other(gs.winner)]} resigned. ${NAMES[gs.winner]} wins`;
@@ -1185,11 +1325,14 @@
     const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
     const lead = view.board.reduce((s, p) => s + (p ? (p.c === 'w' ? 1 : -1) * VAL[p.t] : 0), 0);
     // Player strips above and below the board, each with the pieces that side has captured
+    const toMove = view.turn;
     for (const c of ['w', 'b']) {
       caps[c].sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t));
-      const ahead = c === 'w' ? lead : -lead;
-      $((c === 'w') !== flipped ? 'plBottom' : 'plTop').innerHTML = `<span class="swatch ${c}"></span><span class="pname">${esc(playerName(c))}</span>` +
-        `<span class="captured">${caps[c].map((p) => pieceSVG(p.t, p.c, '')).join('')}${ahead > 0 ? `<span class="lead">+${ahead}</span>` : ''}</span>`;
+      const ahead = c === 'w' ? lead : -lead, info = playerInfo(c);
+      const turnTag = !review && !gs.over ? `<span class="turn${toMove === c ? ' on' : ''}">${toMove === c ? (thinking && c === aiColor() ? 'Thinking…' : 'To move') : NAMES[c]}</span>` : '';
+      $((c === 'w') !== flipped ? 'plBottom' : 'plTop').innerHTML = avatar(c) +
+        `<div class="pinfo"><span class="pname">${esc(info.name)}${info.rating ? `<span class="rating">(${esc(info.rating)})</span>` : ''}</span>` +
+        `<span class="captured">${caps[c].map((p) => pieceSVG(p.t, p.c, '')).join('')}${ahead > 0 ? `<span class="lead">+${ahead}</span>` : ''}</span></div>${turnTag}`;
     }
 
     // Move list, with review variations under the move they branch from
@@ -1211,15 +1354,20 @@
       });
       return `<div class="var">${h}<button class="vdel" data-del="${li}" title="Delete variation">×</button></div>`;
     };
-    let html = '';
+    let html = sans.length ? '' : '<span class="empty">No moves yet. Make a move on the board.</span>';
     for (let k = 0; k < sans.length; k += 2) {
       html += `<span class="n">${k / 2 + 1}.</span>${cell(k)}${cell(k + 1)}`;
       if (review) review.lines.forEach((L, li) => { if (L.start === k || L.start === k + 1) html += varRow(L, li); });
     }
     if (review) review.lines.forEach((L, li) => { if (L.start >= sans.length + (sans.length % 2)) html += varRow(L, li); });
-    mvEl.innerHTML = html;
-    const curEl = mvEl.querySelector('.mv.cur');
-    if (curEl) mvEl.scrollTop = curEl.offsetTop - mvEl.offsetTop - mvEl.clientHeight / 2;
+    for (const el of [mvEl, $('rvMoves')]) {
+      el.innerHTML = html;
+      const curEl = el.querySelector('.mv.cur'), box = el.closest('.pane-body');
+      if (curEl && box && box.offsetParent) {
+        const r = curEl.getBoundingClientRect(), br = box.getBoundingClientRect();
+        if (r.top < br.top + 8 || r.bottom > br.bottom - 8) box.scrollTop += r.top - br.top - box.clientHeight / 2;
+      }
+    }
 
     $('undo').disabled = !history.length || !!review;
     $('reviewBtn').disabled = !history.length || !!review;
@@ -1234,14 +1382,16 @@
   }
 
   const esc = (t) => t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
-  function playerName(c) {
+  function playerInfo(c) {
     if (imported) {
       const n = imported[c === 'w' ? 'White' : 'Black'], elo = imported[c === 'w' ? 'WhiteElo' : 'BlackElo'];
-      return (n && n !== '?' ? n : NAMES[c]) + (elo && elo !== '?' ? ` (${elo})` : '');
+      return { name: n && n !== '?' ? n : NAMES[c], rating: elo && elo !== '?' ? elo : '' };
     }
-    if (!aiColor()) return NAMES[c];
-    return c === aiColor() ? `Computer (${LEVELS[+levelEl.value].elo})` : 'You';
+    if (!aiColor()) return { name: NAMES[c], rating: '' };
+    return c === aiColor() ? { name: 'Computer', rating: String(LEVELS[+levelEl.value].elo) } : { name: 'You', rating: '' };
   }
+  // A square avatar with a pawn, light for White and dark for Black
+  const avatar = (c) => `<span class="avatar ${c}">${pieceSVG('p', c, '')}</span>`;
 
   // Load a pasted PGN as the current game and review it
   function importPGN() {
@@ -1288,6 +1438,9 @@
   $('endReview').onclick = startReview;
   $('reviewBtn').onclick = startReview;
   $('exitReview').onclick = exitReview;
+  document.querySelectorAll('.tab').forEach((t) => { t.onclick = () => setTab(t.dataset.tab); });
+  $('startSteps').onclick = () => { review.view = 'steps'; if (review.cur.line < 0 && review.cur.k === positions().length - 1) review.cur = { line: -1, k: 0 }; render(); };
+  $('rvBack').onclick = () => { review.view = 'summary'; render(); };
   $('pgnReview').onclick = importPGN;
   $('deepReview').onclick = () => startReview(true);
   $('undo').onclick = undo;
@@ -1300,7 +1453,7 @@
   $('navPrev').onclick = () => step(-1);
   $('navNext').onclick = () => step(1);
   $('navLast').onclick = () => goto(-1, positions().length - 1);
-  $('moves').addEventListener('click', (e) => {
+  const onMovesClick = (e) => {
     if (!review) return;
     const del = e.target.closest('.vdel');
     if (del) return deleteLine(+del.dataset.del);
@@ -1308,9 +1461,12 @@
     if (!el) return;
     if (el.dataset.line !== undefined) goto(+el.dataset.line, +el.dataset.k);
     else goto(-1, +el.dataset.k + 1);
-  });
-  $('graph').addEventListener('click', (e) => {
+  };
+  $('moves').addEventListener('click', onMovesClick);
+  $('rvMoves').addEventListener('click', onMovesClick);
+  for (const id of ['graph', 'graph2']) $(id).addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
+    review.view = 'steps';
     goto(-1, Math.round(((e.clientX - r.left) / r.width) * (positions().length - 1)));
   });
   document.addEventListener('keydown', (e) => {
