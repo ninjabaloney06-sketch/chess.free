@@ -78,5 +78,22 @@ if (imp2.moves.length !== 9 || !imp2.moves[8].castle) { ok = false; console.log(
 let threw = false;
 try { E.parsePGN('1. e4 e5 2. Ke3'); } catch (e) { threw = /2\. Ke3/.test(e.message); }
 if (!threw) { ok = false; console.log('FAIL pgn illegal move'); }
+// Opening book: lichess's list (by position) and chess.com's [ECOUrl] line
+require('./openings.js');
+const OB = require('./openings-core.js');
+const qga = 'd4 d5 c4 dxc4 e4 e5 Nf3 Bb4+ Nc3 exd4 Qxd4'.split(' ');
+if (OB.ecoUrlPlies('https://www.chess.com/openings/Queens-Gambit-Accepted-Central-Variation-McDonnell-Defense-4.Nf3-Bb4-5.Nc3-exd4', qga) !== 10
+  || OB.ecoUrlPlies('https://www.chess.com/openings/Ruy-Lopez-Opening-3...a6-4.O-O', 'e4 e5 Nf3 Nc6 Bb5 a6 O-O'.split(' ')) !== 7
+  || OB.ecoUrlPlies('https://www.chess.com/openings/Sicilian-Defense-2.Nf3', qga) !== 0) { ok = false; console.log('FAIL ecoUrl'); }
+let bk = E.newGame(), inBook = [];
+for (const s of qga) { bk = E.makeMove(bk, E.legalMoves(bk).find((m) => E.san(bk, m) === s)); inBook.push(OB.inBook(E.toFEN(bk))); }
+if (inBook.slice(0, 6).includes(false) || inBook[10]) { ok = false; console.log('FAIL opening book', inBook); }
+// Review stats: harmonic-mean accuracy and the chess.com-style game rating
+const RS = require('./review-stats.js');
+const accMoves = [{ acc: 100, counted: true }, { acc: 50, counted: true }, { acc: 50, counted: true }, { acc: 0, counted: false }];
+if (Math.abs(RS.gameAccuracy(null, accMoves, 'w') - 2 / (1 / 100 + 1 / 50)) > 1e-9 || RS.gameAccuracy(null, accMoves, 'b') !== 50) { ok = false; console.log('FAIL accuracy'); }
+if (RS.gameRating(95.7, 20) !== 2200 || RS.gameRating(82.3, 20) !== 2000 || RS.gameRating(90, 5) !== null || RS.gameRating(60, 20) !== 1000) {
+  ok = false; console.log('FAIL game rating', RS.gameRating(95.7, 20), RS.gameRating(82.3, 20));
+}
 console.log(ok ? 'ALL TESTS PASSED' : 'SOME TESTS FAILED');
 process.exit(ok ? 0 : 1);

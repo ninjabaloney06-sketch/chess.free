@@ -89,7 +89,7 @@ const uci = (m) => E.squareName(m.from) + E.squareName(m.to) + (m.promo || '');
     const whiteWin = scores.map((sc, k) => S.winPct((base + k) % 2 === 0 ? sc : -sc));
     const moves = [], cpLoss = [];
     for (let k = 0; k + 1 < scores.length; k++) {
-      const loss = Math.max(0, S.winPct(scores[k]) - S.winPct(-scores[k + 1]));
+      const loss = Math.max(0, S.expectedPoints(scores[k]) - S.expectedPoints(-scores[k + 1]));
       moves.push({ acc: S.moveAccuracy(loss), counted: true });
       const decided = S.decided(S.winPct(scores[k]), S.winPct(-scores[k + 1]));
       cpLoss.push(decided ? null : Math.max(0, S.cpClamp(scores[k]) - S.cpClamp(-scores[k + 1])));
