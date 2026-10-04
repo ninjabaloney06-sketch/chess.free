@@ -1,6 +1,6 @@
 # Stone Chess
 
-A complete chess game on a stone board with hand-drawn black and white pieces. An optional piece set swaps the knights and rooks for unicorns and Eiffel Towers.
+A complete chess game on a stone board with hand-drawn black and white pieces.
 
 **Play:** double-click `index.html`. Everything runs locally on your computer's CPU, with no internet connection, server, or install needed. The bots and Stockfish run in background Web Workers built from files in this folder, so they work even when the page is opened straight from disk. Serving the folder over HTTP (for example `python3 -m http.server` in the repo folder) also works.
 
