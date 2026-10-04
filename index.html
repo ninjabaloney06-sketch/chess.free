@@ -119,7 +119,26 @@
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .row > button { flex: 1; }
   .field { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; margin-bottom: 10px; }
-  label { font-size: .9rem; color: var(--text-2); }
+  label, .label { font-size: .9rem; color: var(--text-2); }
+  .seg { display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: var(--panel-3); min-width: 0; }
+  .seg button { flex: 1; min-width: 0; padding: 6px 4px; border-radius: 7px; background: transparent; box-shadow: none; color: var(--muted); font-weight: 600; }
+  .seg button:hover:not(:disabled) { background: rgba(255, 255, 255, .06); }
+  .seg button:active:not(:disabled) { transform: none; box-shadow: none; }
+  .seg button.on, .seg button.on:hover:not(:disabled) { background: #fff; color: #1f1e1b; }
+  .seg.off { opacity: .45; pointer-events: none; }
+  .slider { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .slider .track { position: relative; flex: 1; min-width: 0; height: 36px; border-radius: 10px; background: var(--panel-3); }
+  .slider .dots { position: absolute; inset: 0 14px; pointer-events: none; }
+  .slider .dots i { position: absolute; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: var(--muted); opacity: .6; }
+  .slider input { -webkit-appearance: none; appearance: none; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0 2px; background: transparent; cursor: pointer; }
+  .slider input:focus { outline: none; }
+  .slider input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 10px; }
+  .slider input::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+  .slider input::-moz-range-track { height: 100%; background: transparent; }
+  .slider input::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 30px; margin-top: 3px; border-radius: 8px; background: #fff; border: 0; box-shadow: 0 2px 4px rgba(0, 0, 0, .35); }
+  .slider input::-moz-range-thumb { width: 24px; height: 30px; border-radius: 8px; background: #fff; border: 0; box-shadow: 0 2px 4px rgba(0, 0, 0, .35); }
+  .slider-val { flex: none; width: 52px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--panel-3); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .slider.off { opacity: .45; pointer-events: none; }
   button, select {
     font: inherit; font-size: .92rem; font-weight: 600; padding: 9px 12px; border-radius: 6px; border: 0;
     background: var(--panel-3); color: var(--text-2); cursor: pointer; box-shadow: 0 3px 0 0 #2a2926;
@@ -242,19 +261,24 @@
     <section class="pane on" id="pane-play">
       <div class="pane-body">
         <div class="status" id="status"></div>
-        <div class="field"><label for="mode">Opponent</label>
-          <select id="mode">
-            <option value="ai-b">Computer (you play White)</option>
-            <option value="ai-w">Computer (you play Black)</option>
-            <option value="human">Two players</option>
-          </select>
+        <div class="field"><span class="label">Opponent</span>
+          <div class="seg" id="opponent" role="radiogroup" aria-label="Opponent">
+            <button type="button" role="radio" data-v="bot">Bot</button>
+            <button type="button" role="radio" data-v="human">Player</button>
+          </div>
         </div>
-        <div class="field"><label for="level">Bot rating</label><select id="level"></select></div>
-        <div class="field"><label for="pieceSet">Pieces</label>
-          <select id="pieceSet">
-            <option value="classic">Classic</option>
-            <option value="unicorn">Unicorns &amp; Eiffel Towers</option>
-          </select>
+        <div class="field"><span class="label">You play</span>
+          <div class="seg" id="side" role="radiogroup" aria-label="Your color">
+            <button type="button" role="radio" data-v="w">White</button>
+            <button type="button" role="radio" data-v="random">Random</button>
+            <button type="button" role="radio" data-v="b">Black</button>
+          </div>
+        </div>
+        <div class="field"><label for="level">Bot rating</label>
+          <div class="slider" id="levelWrap">
+            <div class="track"><div class="dots" id="levelDots"></div><input type="range" id="level" min="0" step="1"></div>
+            <output class="slider-val" id="levelVal" for="level"></output>
+          </div>
         </div>
         <div class="section">Moves</div>
         <div class="moves" id="moves"></div>
@@ -403,30 +427,10 @@
         <path d="M17 55 Q24 57 31 53" stroke="${D}" stroke-width="2" fill="none"/>`;
     }
   }
-  function unicornBody(t, D, light) {
-    if (t === 'n') return `<path d="M28 80 L74 80 Q76 66 70 54 Q66 42 72 30 Q66 19 54 17 L48 12 L45 21
-        Q30 27 22 44 Q18 52 21 58 Q25 63 32 60 Q38 57 45 55 Q41 67 28 80 Z"/>
-      <g fill="${light}" stroke="#141414" stroke-width="2">
-        <circle cx="58" cy="19" r="6"/><circle cx="67" cy="26" r="6"/><circle cx="71" cy="36" r="6"/>
-        <circle cx="70" cy="47" r="6"/><circle cx="73" cy="58" r="6"/><circle cx="75" cy="69" r="6"/></g>
-      <path d="M37 25 L46 20 L26 2 Z" fill="#e9c75a" stroke="#141414" stroke-width="2" stroke-linejoin="round"/>
-      <path d="M31 8 L36 7 M34 12 L40 11 M38 16 L43 16" stroke="#8a6d10" stroke-width="2" fill="none"/>
-      <circle cx="41" cy="35" r="3.5" fill="${D}" stroke="none"/><circle cx="26" cy="52" r="2" fill="${D}" stroke="none"/>
-      <rect x="22" y="80" width="56" height="10" rx="4"/>`;
-    return `<path d="M50 3 L52 16 L55 16 L57 33 L61 33 L61 37 L58 37 L63 55 L68 55 L68 59 L65 59
-        L77 86 L61 86 Q50 66 39 86 L23 86 L35 59 L32 59 L32 55 L37 55 L42 37 L39 37 L39 33 L43 33 L45 16 L48 16 Z"/>
-      <g fill="none" stroke="${D}" stroke-width="1.4">
-        <path d="M46 18 L54 31 M54 18 L46 31"/><path d="M44 38 L57 53 M56 38 L43 53"/>
-        <path d="M37 61 L50 72 M63 61 L50 72 M33 70 L41 80 M67 70 L59 80"/></g>
-      <rect x="38" y="32" width="24" height="5" rx="1"/><rect x="31" y="54" width="38" height="5" rx="1"/>
-      <rect x="20" y="86" width="60" height="7" rx="3"/>`;
-  }
-  let pieceSet = 'classic';
-  const pieceName = (t) => ({ p: 'Pawn', n: pieceSet === 'unicorn' ? 'Unicorn' : 'Knight', b: 'Bishop',
-    r: pieceSet === 'unicorn' ? 'Eiffel Tower' : 'Rook', q: 'Queen', k: 'King' })[t];
+  const pieceName = (t) => ({ p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King' })[t];
   function pieceSVG(t, c, cls = 'piece') {
     const D = c === 'w' ? '#141414' : '#b9b9b9';
-    const body = pieceSet === 'unicorn' && (t === 'n' || t === 'r') ? unicornBody(t, D, c === 'w' ? '#c8c8c8' : '#6e6e6e') : classicBody(t, D);
+    const body = classicBody(t, D);
     return `<svg class="${cls}" viewBox="0 0 100 100" aria-hidden="true"><g fill="url(#g${c})" stroke="#141414"
       stroke-width="3" stroke-linejoin="round">${body}</g></svg>`;
   }
@@ -709,9 +713,26 @@
 
   // ---- State ----
   const $ = (id) => document.getElementById(id);
-  const boardEl = $('board'), statusEl = $('status'), modeEl = $('mode'), levelEl = $('level');
-  LEVELS.forEach((l, i) => levelEl.insertAdjacentHTML('beforeend', `<option value="${i}">${l.elo} · ${LEVEL_NAMES[l.elo]}${l.engine ? ' (Stockfish)' : ''}</option>`));
+  const boardEl = $('board'), statusEl = $('status'), levelEl = $('level');
+  levelEl.max = LEVELS.length - 1;
   levelEl.value = '2';
+  $('levelDots').innerHTML = LEVELS.map((_, i) => `<i style="left:${(i / (LEVELS.length - 1)) * 100}%"></i>`).join('');
+  function showLevel() {
+    const l = LEVELS[+levelEl.value], name = `${LEVEL_NAMES[l.elo]}${l.engine ? ' (Stockfish)' : ''}`;
+    $('levelVal').textContent = l.elo;
+    levelEl.setAttribute('aria-valuetext', `${l.elo} · ${name}`);
+    $('levelWrap').title = `${l.elo} · ${name}`;
+  }
+  showLevel();
+  // Opponent (bot or a second player at this board) and the color you take against the bot;
+  // "random" is settled once per game into myColor.
+  let opponent = 'bot', side = 'w', myColor = 'w';
+  function setSeg(id, v) {
+    $(id).querySelectorAll('button').forEach((b) => { const on = b.dataset.v === v; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+  }
+  function bindSeg(id, set) {
+    $(id).querySelectorAll('button').forEach((b) => { b.onclick = () => set(b.dataset.v); });
+  }
   let game, history, sans, ucis, selected, flipped = false, thinking = false, endShown = false, pendingPromo = null, resigned = null;
   let review = null;
   let tab = 'play';
@@ -719,7 +740,7 @@
   let imported = null; // PGN header tags of an imported game
 
   const positions = () => history.concat([game]);
-  const aiColor = () => (modeEl.value === 'ai-b' ? 'b' : modeEl.value === 'ai-w' ? 'w' : null);
+  const aiColor = () => (opponent === 'bot' ? other(myColor) : null);
   function gameStatus() {
     if (resigned) return { over: true, result: 'resign', winner: other(resigned), check: false };
     return E.status(game);
@@ -733,7 +754,8 @@
     history = []; sans = []; ucis = [];
     selected = null; endShown = false; resigned = null; review = null; imported = null;
     closeModal('endModal'); closeModal('promoModal');
-    flipped = modeEl.value === 'ai-w';
+    myColor = side === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : side;
+    flipped = opponent === 'bot' && myColor === 'b';
     render();
     maybeAI();
   }
@@ -1373,6 +1395,9 @@
     $('reviewBtn').disabled = !history.length || !!review;
     $('resign').disabled = !!review || gs.over;
     levelEl.disabled = !aiColor();
+    $('levelWrap').classList.toggle('off', !aiColor());
+    $('side').classList.toggle('off', opponent !== 'bot');
+    setSeg('opponent', opponent); setSeg('side', side);
     if (review) renderReview();
 
     if (!review && gs.over && !endShown) {
@@ -1399,7 +1424,7 @@
     let parsed;
     try { parsed = E.parsePGN($('pgnInput').value); } catch (e) { errEl.textContent = e.message; errEl.hidden = false; return; }
     errEl.hidden = true;
-    modeEl.value = 'human';
+    opponent = 'human';
     newGame();
     for (const m of parsed.moves) {
       sans.push(E.san(game, m)); ucis.push(uciOf(m)); history.push(game);
@@ -1446,8 +1471,9 @@
   $('undo').onclick = undo;
   $('resign').onclick = resign;
   $('flip').onclick = () => { flipped = !flipped; render(); };
-  $('pieceSet').onchange = (e) => { pieceSet = e.target.value; render(); };
-  modeEl.onchange = newGame;
+  bindSeg('opponent', (v) => { if (v !== opponent) { opponent = v; newGame(); } });
+  bindSeg('side', (v) => { if (v !== side || v === 'random') { side = v; newGame(); } });
+  levelEl.oninput = showLevel;
   levelEl.onchange = () => { if (!history.length) newGame(); };
   $('navFirst').onclick = () => goto(-1, 0);
   $('navPrev').onclick = () => step(-1);
