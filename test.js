@@ -125,6 +125,23 @@ if (repPGN.moves.length !== 57 || E.toFEN(rs2).split(' ').slice(0, 4).join(' ') 
 // Clean text round-trips, promotion in German style, result tags, junk skipping
 const promo = NT.toPGN('1. e4 d5 2. exd5 c6 3. dxc6 Nf6 4. cxb7 Bd7 5. bxa8=D 1-0', E);
 if (!/5\. bxa8=Q 1-0$/.test(promo.pgn) || !promo.pgn.includes('[Result "1-0"]')) { ok = false; console.log('FAIL notation promotion', promo.pgn); }
+// A real OCR reading of the sheet in a handwriting font: mangled move number
+// ("l."), $ for 3, "ey"/"BbY" for e5/Bb5, "Nob" for Nc6, glued "5.0-0"
+const marker = NT.toPGN('l.e4 ey 2, Nf$ Nob $.BbY a6 4. Ba4 Nf6 5.0-0 Be7 1-0', E);
+if (!/1\. e4 e5 2\. Nf3 Nc6 3\. Bb5 a6 4\. Ba4 Nf6 5\. O-O Be7 1-0$/.test(marker.pgn)) {
+  ok = false; console.log('FAIL notation marker felt', marker.pgn);
+}
+// A larger handwriting font: '¢' junk inside a glued move, z for 3, e for c/6,
+// y for 7, "ae" for a6, a misread result "7-0"
+const bradley = NT.toPGN('1.e4¢e5 2. Nfz Nee 3. Bb5 ae 4. Ba4 Nfe 5. 0-0 Bey 7-0', E);
+if (!/1\. e4 e5 2\. Nf3 Nc6 3\. Bb5 a6 4\. Ba4 Nf6 5\. O-O Be7$/.test(bradley.pgn)) {
+  ok = false; console.log('FAIL notation bradley', bradley.pgn);
+}
+// Chalkboard-style accents: Nfé for Nf6, ab for a6
+const chalk = NT.toPGN('1. e4 e5 2. Nf3 Ncé 3. Bb5 ab 4. Ba4 Nfé 5. 0-0 Be7 1-0', E);
+if (!/1\. e4 e5 2\. Nf3 Nc6 3\. Bb5 a6 4\. Ba4 Nf6 5\. O-O Be7 1-0$/.test(chalk.pgn)) {
+  ok = false; console.log('FAIL notation chalkboard', chalk.pgn);
+}
 const lower = NT.toPGN('1. e4 e5 2. nf3 nc6', E);
 if (!/1\. e4 e5 2\. Nf3 Nc6$/.test(lower.pgn)) { ok = false; console.log('FAIL notation lowercase', lower.pgn); }
 const junk = NT.toPGN('Runde 5 1. e4 e5 White 2. Nf3 Nc6', E);

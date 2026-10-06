@@ -397,9 +397,9 @@
 <script src="review-stats.js?v=4"></script>
 <script src="openings.js?v=1"></script>
 <script src="openings-core.js?v=1"></script>
-<script src="notation.js?v=1"></script>
+<script src="notation.js?v=2"></script>
 <script src="game-db.js?v=1"></script>
-<script src="ocr.js?v=1"></script>
+<script src="ocr.js?v=6"></script>
 <script>
 (function () {
   'use strict';
@@ -1556,8 +1556,9 @@
   $('ocrReview').onclick = () => {
     $('ocrError').hidden = true;
     try {
-      const { pgn } = Notation.toPGN($('ocrText').value, E);
+      const { pgn, warnings } = Notation.toPGN($('ocrText').value, E);
       $('pgnInput').value = pgn;
+      if (warnings.length) $('ocrStatus').textContent = 'Ignored unreadable text: ' + warnings.join(', ');
       importPGN('photo');
     } catch (e) {
       $('ocrError').textContent = e.message;
