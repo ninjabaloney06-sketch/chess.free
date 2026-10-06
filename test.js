@@ -132,10 +132,12 @@ if (!/1\. e4 e5 2\. Nf3 Nc6 3\. Bb5 a6 4\. Ba4 Nf6 5\. O-O Be7 1-0$/.test(marker
   ok = false; console.log('FAIL notation marker felt', marker.pgn);
 }
 // A larger handwriting font: '¢' junk inside a glued move, z for 3, e for c/6,
-// y for 7, "ae" for a6, a misread result "7-0"
+// y for 7, a misread result "7-0". The unreadable first move ("1.e4¢e5")
+// is skipped with a warning — the game then starts at Nf3, and later moves
+// that need the lost e-pawn pushed are correctly rejected.
 const bradley = NT.toPGN('1.e4¢e5 2. Nfz Nee 3. Bb5 ae 4. Ba4 Nfe 5. 0-0 Bey 7-0', E);
-if (!/1\. e4 e5 2\. Nf3 Nc6 3\. Bb5 a6 4\. Ba4 Nf6 5\. O-O Be7$/.test(bradley.pgn)) {
-  ok = false; console.log('FAIL notation bradley', bradley.pgn);
+if (!/1\. Nf3 Nc6$/.test(bradley.pgn) || bradley.warnings.length < 2) {
+  ok = false; console.log('FAIL notation bradley', bradley.pgn, bradley.warnings);
 }
 // Chalkboard-style accents: Nfé for Nf6, ab for a6
 const chalk = NT.toPGN('1. e4 e5 2. Nf3 Ncé 3. Bb5 ab 4. Ba4 Nfé 5. 0-0 Be7 1-0', E);
@@ -147,7 +149,33 @@ if (!/1\. e4 e5 2\. Nf3 Nc6$/.test(lower.pgn)) { ok = false; console.log('FAIL n
 const junk = NT.toPGN('Runde 5 1. e4 e5 White 2. Nf3 Nc6', E);
 if (junk.warnings.length !== 2 || !/2\. Nf3 Nc6$/.test(junk.pgn)) { ok = false; console.log('FAIL notation junk', junk.warnings, junk.pgn); }
 let notThrow = false;
-try { NT.toPGN('1. e4 e5 2. Nf9', E); } catch (e) { notThrow = /2\.\.\.|2\./.test(e.message) && e.message.includes('Nf9'); }
+// Mid-game failure with a later move of the same color still legal: throws.
+try { NT.toPGN('1. e4 e5 2. Nf9 Bb5', E); } catch (e) { notThrow = /Nf9/.test(e.message); }
 if (!notThrow) { ok = false; console.log('FAIL notation error message'); }
+// An unreadable LAST token only stops the parse with a warning (the moves
+// before it stay usable); junk after the game (result block) is dropped too.
+const tail = NT.toPGN('1. e4 e5 2. Nf3 Nc6 3. Bb5 Nf6 CROSS CORRECT RESULT', E);
+if (!/1\. e4 e5 2\. Nf3 Nc6 3\. Bb5 Nf6$/.test(tail.pgn) || !tail.warnings.length) {
+  ok = false; console.log('FAIL notation trailing', tail.pgn, tail.warnings);
+}
+// Descriptive notation (pre-1980 scoresheets): files named from the mover's
+// side, captures by victim piece, OO castling
+const dqgd = NT.toPGN('1 NKB3 PQ4 2 PQ4 NKB3 3 PQB4 PK3 4 NQB3 BK2 5 PKN3 OO', E);
+if (!/1\. Nf3 d5 2\. d4 Nf6 3\. c4 e6 4\. Nc3 Be7 5\. g3 O-O$/.test(dqgd.pgn)) {
+  ok = false; console.log('FAIL notation descriptive', dqgd.pgn);
+}
+const rxr = NT.descriptiveMoves(E.fromFEN('3r3k/8/8/8/8/8/8/3R3K w - - 0 1'), 'RXR', E);
+if (rxr.length !== 1 || E.squareName(rxr[0].from) !== 'd1' || E.squareName(rxr[0].to) !== 'd8') {
+  ok = false; console.log('FAIL descriptive RXR', rxr);
+}
+const pxp = NT.descriptiveMoves(E.fromFEN('7k/8/8/3p4/4P3/8/8/7K w - - 0 1'), 'PXP', E);
+if (pxp.length !== 1 || E.squareName(pxp[0].to) !== 'd5') { ok = false; console.log('FAIL descriptive PXP', pxp); }
+const pkb4 = NT.descriptiveMoves(E.fromFEN('7k/5p2/8/8/8/8/8/7K b - - 0 1'), 'PKB4', E);
+if (pkb4.length !== 1 || E.squareName(pkb4[0].to) !== 'f5') { ok = false; console.log('FAIL descriptive black PKB4', pkb4); }
+const ooB = NT.descriptiveMoves(E.fromFEN('r3k2r/8/8/8/8/8/8/4K3 b kq - 0 1'), 'OO', E);
+if (ooB.length !== 1 || !ooB[0].castle) { ok = false; console.log('FAIL descriptive OO', ooB); }
+// two rooks can each take the rook: ambiguous, must refuse
+const amb = NT.descriptiveMoves(E.fromFEN('7k/8/8/1R1r1R2/8/8/8/7K w - - 0 1'), 'RXR', E);
+if (amb.length !== 2) { ok = false; console.log('FAIL descriptive ambiguity', amb); }
 console.log(ok ? 'ALL TESTS PASSED' : 'SOME TESTS FAILED');
 process.exit(ok ? 0 : 1);

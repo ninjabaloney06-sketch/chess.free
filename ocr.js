@@ -69,6 +69,19 @@
       lo = Math.min(lo, 100);
       hi = Math.max(hi, 180);
       const range = Math.max(1, hi - lo);
+      // Erase long table rules first: a grid of lines wrecks page segmentation.
+      // A row/column where most pixels are darker than the paper is a rule.
+      const thr = Math.max(50, Math.min(200, hi * 0.78));
+      const darkRow = new Array(h).fill(0), darkCol = new Array(w).fill(0);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) if (p[(y * w + x) * 4] < thr) { darkRow[y]++; darkCol[x]++; }
+      }
+      for (let y = 0; y < h; y++) {
+        if (darkRow[y] > w * 0.55) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; p[i] = p[i + 1] = p[i + 2] = 255; }
+      }
+      for (let x = 0; x < w; x++) {
+        if (darkCol[x] > h * 0.55) for (let y = 0; y < h; y++) { const i = (y * w + x) * 4; p[i] = p[i + 1] = p[i + 2] = 255; }
+      }
       for (let i = 0; i < p.length; i += 4) {
         const v = Math.max(0, Math.min(255, Math.round(((p[i] - lo) / range) * 255)));
         p[i] = p[i + 1] = p[i + 2] = v;
