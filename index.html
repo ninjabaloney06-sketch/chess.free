@@ -217,6 +217,16 @@
   .nav button { font-size: 1.15rem; padding: 10px 0; }
   .rv-moves { margin-top: 4px; }
 
+  /* Import: photo and saved games */
+  #photoThumb { width: 100%; max-height: 140px; object-fit: contain; border-radius: 6px; margin-bottom: 8px; background: var(--panel-3); }
+  .game { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; background: var(--panel-2); margin-bottom: 6px; }
+  .game .g-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .game .g-main b { font-size: .92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .game .g-main span { font-size: .78rem; color: var(--muted); }
+  .game .g-btns { display: flex; gap: 6px; flex: none; }
+  .game .g-btns button { padding: 7px 10px; font-size: .85rem; }
+  .game .g-btns button.danger.armed { background: var(--danger); color: #fff; }
+
   /* Narrow screens: board on top, panel below */
   @media (max-width: 960px) {
     :root { --board: min(calc(100vw - 32px - 34px), 640px); }
@@ -334,9 +344,26 @@
 
     <section class="pane" id="pane-import">
       <div class="pane-body">
-        <p class="hint">Paste a PGN from chess.com or lichess to review it. Games from chess.com keep chess.com's own opening book.</p>
+        <p class="hint">Paste a PGN from chess.com or lichess to review it. Games from chess.com keep chess.com's own opening book. Every imported game is saved under My games.</p>
         <textarea id="pgnInput" spellcheck="false" placeholder="[Event &quot;Live Chess&quot;]&#10;...&#10;1. e4 e5 2. Nf3 ..."></textarea>
         <p class="err" id="pgnError" hidden></p>
+
+        <div class="section">From a photo of a scoresheet</div>
+        <p class="hint">Photograph the notation so it fills the frame, straight from above. The moves are read offline in your browser — check the text it found, fix mistakes, then review.</p>
+        <div class="row" style="margin-bottom:8px">
+          <button id="photoPick">Choose photo</button>
+          <button id="photoRead" disabled>Read notation</button>
+        </div>
+        <input type="file" id="photoFile" accept="image/*" capture="environment" hidden>
+        <img id="photoThumb" alt="Scoresheet preview" hidden>
+        <div class="progress" id="ocrProg" hidden><div id="ocrProgBar"></div></div>
+        <div class="rv-status" id="ocrStatus" style="margin-bottom:8px"></div>
+        <textarea id="ocrText" hidden spellcheck="false" placeholder="The moves read from the photo appear here — fix mistakes before reviewing."></textarea>
+        <p class="err" id="ocrError" hidden></p>
+        <button class="primary big" id="ocrReview" hidden style="margin-bottom:4px">Review this game</button>
+
+        <div class="section">My games</div>
+        <div id="gamesList"></div>
       </div>
       <div class="pane-foot">
         <button class="primary big" id="pgnReview">Review this game</button>
@@ -370,6 +397,9 @@
 <script src="review-stats.js?v=4"></script>
 <script src="openings.js?v=1"></script>
 <script src="openings-core.js?v=1"></script>
+<script src="notation.js?v=1"></script>
+<script src="game-db.js?v=1"></script>
+<script src="ocr.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -1418,8 +1448,8 @@
   // A square avatar with a pawn, light for White and dark for Black
   const avatar = (c) => `<span class="avatar ${c}">${pieceSVG('p', c, '')}</span>`;
 
-  // Load a pasted PGN as the current game and review it
-  function importPGN() {
+  // Load a pasted PGN as the current game and review it, saving it to My games
+  function importPGN(source) {
     const errEl = $('pgnError');
     let parsed;
     try { parsed = E.parsePGN($('pgnInput').value); } catch (e) { errEl.textContent = e.message; errEl.hidden = false; return; }
@@ -1432,8 +1462,108 @@
     }
     imported = parsed.tags;
     endShown = true;
+    if (source !== 'library') saveGame($('pgnInput').value, parsed, source || 'pgn');
     startReview();
   }
+
+  // ---- Import: My games (IndexedDB, browser-only) ----
+  function saveGame(pgn, parsed, source) {
+    const tags = parsed.tags;
+    GameDB.save({
+      id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      savedAt: Date.now(),
+      pgn,
+      white: tags.White || 'White', black: tags.Black || 'Black',
+      result: tags.Result || '*', moves: parsed.moves.length, source,
+    }).then(renderGames).catch(() => {});
+  }
+  async function renderGames() {
+    const el = $('gamesList');
+    let rows;
+    try { rows = await GameDB.list(); } catch (e) { return; }
+    if (!rows.length) { el.innerHTML = '<p class="hint" style="margin:0">No saved games yet.</p>'; return; }
+    el.innerHTML = rows.map((r) => `<div class="game" data-id="${r.id}">
+      <div class="g-main"><b>${esc(r.white)} – ${esc(r.black)}</b>
+      <span>${new Date(r.savedAt).toLocaleDateString()} · ${esc(r.result)} · ${Math.ceil(r.moves / 2)} moves</span></div>
+      <div class="g-btns"><button data-a="go">Review</button><button data-a="pgn">PGN</button>
+      <button class="danger" data-a="del" title="Delete">✕</button></div></div>`).join('');
+  }
+  $('gamesList').addEventListener('click', async (e) => {
+    const b = e.target.closest('button'), row = e.target.closest('.game');
+    if (!b || !row) return;
+    const rec = await GameDB.get(row.dataset.id);
+    if (!rec) { renderGames(); return; }
+    const a = b.dataset.a;
+    if (a === 'go') {
+      $('pgnInput').value = rec.pgn;
+      importPGN('library');
+    } else if (a === 'pgn') {
+      $('pgnInput').value = rec.pgn;
+    } else if (a === 'del') {
+      if (!b.classList.contains('armed')) {
+        b.classList.add('armed'); b.textContent = 'Sure?';
+        setTimeout(() => { b.classList.remove('armed'); b.textContent = '✕'; }, 3000);
+        return;
+      }
+      await GameDB.del(rec.id);
+      renderGames();
+    }
+  });
+
+  // ---- Import: photo of a scoresheet ----
+  let photoBlob = null;
+  $('photoPick').onclick = () => $('photoFile').click();
+  $('photoFile').onchange = () => {
+    photoBlob = $('photoFile').files[0] || null;
+    $('photoRead').disabled = !photoBlob;
+    $('ocrError').hidden = true;
+    if (!photoBlob) { $('photoThumb').hidden = true; return; }
+    const r = new FileReader();
+    r.onload = () => { $('photoThumb').src = r.result; $('photoThumb').hidden = false; };
+    r.readAsDataURL(photoBlob);
+  };
+  const OCR_STATUS = {
+    'loading tesseract core': 'Loading OCR engine…', 'initializing tesseract': 'Preparing OCR engine…',
+    'loading language traineddata': 'Loading English…', 'initializing api': 'Preparing…',
+    'recognizing text': 'Reading notation…',
+  };
+  $('photoRead').onclick = async () => {
+    if (!photoBlob) return;
+    const btn = $('photoRead');
+    btn.disabled = true;
+    $('ocrProg').hidden = false; $('ocrProgBar').style.width = '0%';
+    $('ocrStatus').textContent = 'Loading OCR…';
+    $('ocrError').hidden = true;
+    try {
+      const text = (await NotationOCR.recognize(photoBlob, (status, p) => {
+        $('ocrStatus').textContent = OCR_STATUS[status] || status;
+        if (typeof p === 'number') $('ocrProgBar').style.width = Math.round(p * 100) + '%';
+      })).trim();
+      $('ocrProg').hidden = true;
+      if (!text) throw new Error('No text found in the photo. Use more light and let the notation fill the frame.');
+      $('ocrText').value = text;
+      $('ocrText').hidden = false;
+      $('ocrReview').hidden = false;
+      $('ocrStatus').textContent = 'Check the text below — fix anything the OCR got wrong, then review.';
+    } catch (e) {
+      $('ocrProg').hidden = true;
+      $('ocrStatus').textContent = '';
+      $('ocrError').textContent = e.message || 'Could not read the photo.';
+      $('ocrError').hidden = false;
+    }
+    btn.disabled = false;
+  };
+  $('ocrReview').onclick = () => {
+    $('ocrError').hidden = true;
+    try {
+      const { pgn } = Notation.toPGN($('ocrText').value, E);
+      $('pgnInput').value = pgn;
+      importPGN('photo');
+    } catch (e) {
+      $('ocrError').textContent = e.message;
+      $('ocrError').hidden = false;
+    }
+  };
 
   function arrowSVG(from, to, color = 'rgba(129,182,76,.85)', cls = '') {
     const xy = (i) => { const v = flipped ? 63 - i : i; return [(v % 8) + 0.5, Math.floor(v / 8) + 0.5]; };
@@ -1466,7 +1596,7 @@
   document.querySelectorAll('.tab').forEach((t) => { t.onclick = () => setTab(t.dataset.tab); });
   $('startSteps').onclick = () => { review.view = 'steps'; if (review.cur.line < 0 && review.cur.k === positions().length - 1) review.cur = { line: -1, k: 0 }; render(); };
   $('rvBack').onclick = () => { review.view = 'summary'; render(); };
-  $('pgnReview').onclick = importPGN;
+  $('pgnReview').onclick = () => importPGN('pgn');
   $('deepReview').onclick = () => startReview(true);
   $('undo').onclick = undo;
   $('resign').onclick = resign;
@@ -1502,6 +1632,7 @@
   });
 
   newGame();
+  renderGames();
 })();
 </script>
 </body>

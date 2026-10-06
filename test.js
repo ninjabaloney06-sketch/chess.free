@@ -95,5 +95,42 @@ if (Math.abs(RS.gameAccuracy(null, accMoves, 'w') - 2 / (1 / 100 + 1 / 50)) > 1e
 if (RS.gameRating(95.7, 20) !== 2200 || RS.gameRating(82.3, 20) !== 2000 || RS.gameRating(90, 5) !== null || RS.gameRating(60, 20) !== 1000) {
   ok = false; console.log('FAIL game rating', RS.gameRating(95.7, 20), RS.gameRating(82.3, 20));
 }
+// Notation repair: OCR-style noise (German pieces, 0/O, junk tokens, merged
+// half-moves, uppercase) must produce the same game as the clean notation
+const NT = require('./notation.js');
+const refGame = `1. d4 d5 2. c4 dxc4 3. e4 e5 4. Nf3 Bb4+ 5. Nc3 exd4 6. Qxd4 Qxd4 7. Nxd4 Ne7 8. Bxc4 O-O 9. Bd2 Nbc6
+10. Nxc6 Nxc6 11. a3 Bd6 12. O-O Bg4 13. h3 Be6 14. Bxe6 fxe6 15. f4 Nd4 16. e5 Nb3 17. exd6 Nxd2
+18. Rfd1 Nb3 19. Rab1 cxd6 20. Rxd6 Rxf4 21. Rxe6 Nd4 22. Re7 b6 23. Rd1 Nc6 24. Rc7 Ne5 25. Re1 Nd3
+26. Ree7 Nxb2 27. Rxg7+ Kf8 28. Rxh7 Nd3 29. Rh8# 1-0`;
+const ref = E.parsePGN(refGame);
+let rs = E.newGame();
+for (const m of ref.moves) rs = E.makeMove(rs, m);
+const refFEN = E.toFEN(rs).split(' ').slice(0, 4).join(' ');
+// The same sheet as OCR would deliver it: German pieces, 0 for O, glued
+// half-moves, junk headers, everything uppercased by the reader
+const noisy = `TURNIERRUNDE 3
+1. d4 d5 2. c4 dxc4 3. e4 e5 4. SF3 Bb4+ 5. Nc3 exd4 6. Qxd4 Qxd4 7. Sxd4 Se7
+8. Bxc4 0-0 9. Bd2 NBC6 10. Nxc6 Nxc6 11. a3Bd6 12. 0-0 Lg4 13. h3 Le6
+14. Bxe6 fxe6 15. f4 Nd4 16. e5 Nb3 17. exd6 Nxd2 18. Rfd1 Nb3 19. Rab1 cxd6
+20. Rxd6 Rxf4 21. Rxe6 Nd4 22. Re7 b6 23. Rd1 Nc6 24. Rc7 Ne5 25. Re1 Nd3
+26. Ree7 Nxb2 27. Rxg7+ Kf8 28. Rxh7 Nd3 29. Rh8 1-0`;
+const rep = NT.toPGN(noisy, E);
+const repPGN = E.parsePGN(rep.pgn);
+let rs2 = E.newGame();
+for (const m of repPGN.moves) rs2 = E.makeMove(rs2, m);
+if (repPGN.moves.length !== 57 || E.toFEN(rs2).split(' ').slice(0, 4).join(' ') !== refFEN
+  || repPGN.tags.Result !== '1-0' || !/29\. Rh8# 1-0$/.test(rep.pgn)) {
+  ok = false; console.log('FAIL notation repair', repPGN.moves.length, E.toFEN(rs2));
+}
+// Clean text round-trips, promotion in German style, result tags, junk skipping
+const promo = NT.toPGN('1. e4 d5 2. exd5 c6 3. dxc6 Nf6 4. cxb7 Bd7 5. bxa8=D 1-0', E);
+if (!/5\. bxa8=Q 1-0$/.test(promo.pgn) || !promo.pgn.includes('[Result "1-0"]')) { ok = false; console.log('FAIL notation promotion', promo.pgn); }
+const lower = NT.toPGN('1. e4 e5 2. nf3 nc6', E);
+if (!/1\. e4 e5 2\. Nf3 Nc6$/.test(lower.pgn)) { ok = false; console.log('FAIL notation lowercase', lower.pgn); }
+const junk = NT.toPGN('Runde 5 1. e4 e5 White 2. Nf3 Nc6', E);
+if (junk.warnings.length !== 2 || !/2\. Nf3 Nc6$/.test(junk.pgn)) { ok = false; console.log('FAIL notation junk', junk.warnings, junk.pgn); }
+let notThrow = false;
+try { NT.toPGN('1. e4 e5 2. Nf9', E); } catch (e) { notThrow = /2\.\.\.|2\./.test(e.message) && e.message.includes('Nf9'); }
+if (!notThrow) { ok = false; console.log('FAIL notation error message'); }
 console.log(ok ? 'ALL TESTS PASSED' : 'SOME TESTS FAILED');
 process.exit(ok ? 0 : 1);
