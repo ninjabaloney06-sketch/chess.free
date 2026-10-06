@@ -26,11 +26,17 @@
   // OCR noise like "ey" for e5 gets a chance to match a legal move first.
   // Letters that survive: files a-h, pieces KQRBN plus German S/T/L/D, castle O.
   function cleanToken(t) {
-    let x = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\$/g, '3')
-      .replace(/[–—−]/g, '-').replace(/[.,;:!?+#()"'*§×¢€£¥¤]/g, '')
+    let x = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\$/g, '3').replace(/&/g, 'Q')
+      .replace(/[–—−]/g, '-').replace(/[.,;:!?+#()"'*§×¢€£¥¤]/g, '').replace(/ep$/i, '')
       .replace(/^\d+(?=[a-h0-9koq])/i, '').replace(/^l(?=[a-h0-9])|^i(?=[a-h0-9])/, '');
     if (!x || RESULTS.test(t) || /^\d+$/.test(x) || SKIPPABLE.test(x)) return null;
+    // Castling misread as digits/letters ("09", "00", "000").
+    if (/^[o0][09o]$/i.test(x)) x = 'OO';
+    else if (/^[o0]{3}$/i.test(x)) x = 'OOO';
     if (/^[2-9?]-[0-9?]$|^[0-9?]-[2-9?]$/.test(x)) return null; // misread result ("7-0"), never castling
+    // Descriptive pawn moves carry a leading P ("PQ4", "PKN3", "PXP") — no
+    // algebraic SAN does, so admit exactly that shape, not every P-word.
+    if (/^p(?:x[kqrnbp]|[kq][nbr][1-8]|[kq][1-8]|[nbr][1-8])$/i.test(x)) return { text: x, weak: false };
     if (/[^a-h0-9=xoknqrbstldyz-]/i.test(x)) return null;
     if (/^[a-z]{1,2}$/i.test(x) && !/^[o0]+$/i.test(x)) return { text: x, weak: true };
     return { text: x, weak: false };
@@ -57,9 +63,9 @@
     if (a === b) return 0;
     if (Math.abs(a.length - b.length) > 1) return null;
     // Short tokens (e4, Nf3) only tolerate character substitutions that OCR
-    // actually makes — never a plain flip (e4 vs e5) or a changed length.
-    // The cost is the number of differing characters, so the closest reading wins.
-    if (Math.min(a.length, b.length) < 4) {
+    // actually makes — never a plain flip (e4 vs e5). The cost is the number
+    // of differing characters, so the closest reading wins.
+    if (Math.max(a.length, b.length) < 4) {
       if (a.length !== b.length) return null;
       let diffs = 0, allConfusable = true;
       for (let i = 0; i < a.length; i++) {
@@ -84,20 +90,98 @@
     return prev[b.length] <= 1 ? prev[b.length] : null;
   }
 
-  function matchMove(s, token, E) {
+  // ---- English descriptive notation (older scoresheets) ----
+  // "NKB3" = knight to the king's bishop's 3rd (f3 for White, f6 for Black);
+  // "RxR" = rook takes a rook; "QR-Q1" = queen's rook to d1. Files are named
+  // from the mover's side, so the mover's color picks the absolute rank.
+  const FILE_BY_NAME = { K: 'e', Q: 'd', N: 'bg', B: 'cf', R: 'ah' };
+  const ORIGIN_FILE = { KN: 'g', KR: 'h', KB: 'f', QN: 'b', QB: 'c', QR: 'a' };
+
+  // All legal moves matching one descriptive reading of the token.
+  function descriptiveMatches(s, piece, originFile, victim, destPart, E) {
+    let dests = null;
+    if (destPart) {
+      const dm = destPart.match(/^([KQ][RBN]|[KQ]|[NBR])([1-8xysbzgil])$/i);
+      if (!dm) return [];
+      const two = dm[1].length === 2;
+      const files = two ? ORIGIN_FILE[dm[1].toUpperCase()] : FILE_BY_NAME[dm[1].toUpperCase()];
+      if (!files) return [];
+      // Handwritten ranks OCR as letter lookalikes (3→x, 7→y).
+      const rankChar = ({ x: '3', y: '7', s: '5', z: '2', b: '8', g: '6', q: '9', i: '1', l: '1' })[dm[2].toLowerCase()] || dm[2];
+      const rank = s.turn === 'w' ? +rankChar : 9 - +rankChar;
+      dests = [...files].map((f) => f + rank);
+    }
+    return E.legalMoves(s).filter((m) => {
+      const p = s.board[m.from];
+      if (!p || p.t !== piece) return false;
+      if (originFile && 'abcdefgh'[m.from % 8] !== originFile) return false;
+      if (victim) {
+        const v = s.board[m.to];
+        return !!v && v.c !== p.c && v.t === victim;
+      }
+      return !!dests && dests.includes(E.squareName(m.to));
+    });
+  }
+
+  // Every legal move the token can describe under any reading ("QN3" = queen
+  // to the knight's 3rd, "QRQ1" = queen's rook to Q1, "KN3" = knight or pawn).
+  function descriptiveMoves(s, token, E) {
+    const t = token.toUpperCase().replace(/0/g, 'O').replace(/-/g, '');
+    if (/^O{2}$/.test(t) || /^O{3}$/.test(t)) {
+      return E.legalMoves(s).filter((m) => m.castle && (t.length === 3) === (m.castle === 'Q'));
+    }
+    const destPat = '(?:[KQ][RBN]|[KQ]|[NBR])[1-8xysbzgilXYSBZGIL]';
+    const readings = [];
+    const cap = t.match(new RegExp('^([KQ][RBN]|[KQRBNP])X([KQRBNP])$'));
+    if (cap) {
+      const origin = ORIGIN_FILE[cap[1]];
+      readings.push([cap[1].slice(-1).toLowerCase(), origin || null, cap[2].toLowerCase(), null]);
+    } else {
+      const origin = t.match(new RegExp('^([KQ][RBN])(' + destPat + ')$'));
+      if (origin) readings.push([origin[1][1].toLowerCase(), ORIGIN_FILE[origin[1]], null, origin[2]]);
+      const pawn = t.match(new RegExp('^P(' + destPat + ')$'));
+      if (pawn) readings.push(['p', null, null, pawn[1]]);
+      const piece = t.match(new RegExp('^([KQRBN])(' + destPat + ')$'));
+      if (piece) readings.push([piece[1].toLowerCase(), null, null, piece[2]]);
+    }
+    if (!readings.length) return [];
+    const out = new Map();
+    for (const [piece, originFile, victim, destPart] of readings) {
+      for (const m of descriptiveMatches(s, piece, originFile, victim, destPart, E)) out.set(m.from * 64 + m.to, m);
+    }
+    return [...out.values()];
+  }
+
+  // A token only descriptive notation can produce (NKB3, PKB4, RxR, PXp ...).
+  function looksDescriptive(token) {
+    return /^(?:[KQ][RBN][1-8]|[PKQRBN][KQ][RBN][1-8]|[KQRBN]X[KQRBNP]|PX[KQRBNP])$/i.test(token);
+  }
+
+  function matchMove(s, token, E, preferDesc) {
     const readings = [...new Set([clean(token).toLowerCase(), clean(germanize(token)).toLowerCase()])];
+    const descriptive = () => {
+      const ms = descriptiveMoves(s, token, E);
+      return ms.length === 1 ? ms[0] : null; // two readings of one token = ambiguous
+    };
+    if (preferDesc) {
+      const d = descriptive();
+      if (d) return d;
+    }
     const cands = E.legalMoves(s).map((m) => ({ m, sn: clean(E.san(s, m)).toLowerCase() }));
     for (const w of readings) {
       const hit = cands.find((o) => o.sn === w);
       if (hit) return hit.m; // SAN disambiguates, so an exact match is unique
     }
-    // No exact match: accept a single unambiguous near neighbour of either reading.
+    // No exact match: OCR junk inside a move often makes it look descriptive
+    // ("NRh3" for Nh3), so try the descriptive reading before fuzzy repair.
+    const d = descriptive();
+    if (d) return d;
     let best = null, bestCost = 3, ties = 0;
     for (const { m, sn } of cands) {
       let c = null;
       for (const w of readings) {
-        const d = editCost(w, sn);
-        if (d !== null && (c === null || d < c)) c = d;
+        const dc = editCost(w, sn);
+        if (dc !== null && (c === null || dc < c)) c = dc;
       }
       if (c === null) continue;
       if (c < bestCost) { best = m; bestCost = c; ties = 1; }
@@ -107,13 +191,13 @@
   }
 
   // OCR sometimes glues two half-moves together ("e4e5"). Try every split point.
-  function trySplit(s, token, E) {
+  function trySplit(s, token, E, preferDesc) {
     if (token.length < 4) return null;
     for (let i = 2; i < token.length - 1; i++) {
-      const m1 = matchMove(s, token.slice(0, i), E);
+      const m1 = matchMove(s, token.slice(0, i), E, preferDesc);
       if (!m1) continue;
       const s2 = E.makeMove(s, m1);
-      const m2 = matchMove(s2, token.slice(i), E);
+      const m2 = matchMove(s2, token.slice(i), E, preferDesc);
       if (m2) return [m1, s2, m2];
     }
     return null;
@@ -134,19 +218,36 @@
 
     let s = E.newGame();
     const sans = [];
-    for (const raw of toks) {
+    const preferDesc = toks.some((t) => { const c = cleanToken(t); return c && !c.weak && looksDescriptive(c.text); });
+    // Real sheets open with header text (event, date, player names): start at
+    // the first token that is a legal move in the initial position.
+    let first = 0;
+    while (first < toks.length) {
+      const c = cleanToken(toks[first]);
+      if (c && !c.weak && matchMove(E.newGame(), c.text, E, preferDesc)) break;
+      first++;
+    }
+    if (first) warnings.push(`Skipped header text before "${toks[first] || ''}"`);
+    for (let ti = first; ti < toks.length; ti++) {
+      const raw = toks[ti];
       const c = cleanToken(raw);
       if (!c) { warnings.push(`Skipped "${raw}"`); continue; }
-      let m = matchMove(s, c.text, E);
+      let m = matchMove(s, c.text, E, preferDesc);
       if (!m && c.weak) { warnings.push(`Skipped "${raw}"`); continue; } // "No", "B." junk
       if (m) { sans.push(E.san(s, m)); s = E.makeMove(s, m); continue; }
-      const split = trySplit(s, c.text, E);
+      const split = trySplit(s, c.text, E, preferDesc);
       if (split) {
         sans.push(E.san(s, split[0]), E.san(split[1], split[2]));
         s = E.makeMove(split[1], split[2]);
         warnings.push(`Split "${raw}" into two moves`);
         continue;
       }
+      // Trailing text (result block, signatures) never matches again: end here.
+      const moreMoves = toks.slice(ti + 1).some((t2) => {
+        const c2 = cleanToken(t2);
+        return !!c2 && !c2.weak && !!matchMove(s, c2.text, E, preferDesc);
+      });
+      if (!moreMoves) { warnings.push(`Stopped at unreadable "${raw}"`); break; }
       const n = Math.floor(sans.length / 2) + 1;
       const after = sans.length ? ` after "${sans[sans.length - 1]}"` : '';
       throw new Error(`Move ${n}${sans.length % 2 ? '…' : '.'}: "${raw}" is not readable as a legal move${after}. Fix it in the text and try again.`);
@@ -164,7 +265,7 @@
     return { pgn, warnings };
   }
 
-  const api = { toPGN };
+  const api = { toPGN, descriptiveMoves };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Notation = api;
 })(typeof self !== 'undefined' ? self : this);
