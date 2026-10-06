@@ -92,8 +92,16 @@ if (inBook.slice(0, 6).includes(false) || inBook[10]) { ok = false; console.log(
 const RS = require('./review-stats.js');
 const accMoves = [{ acc: 100, counted: true }, { acc: 50, counted: true }, { acc: 50, counted: true }, { acc: 0, counted: false }];
 if (Math.abs(RS.gameAccuracy(null, accMoves, 'w') - 2 / (1 / 100 + 1 / 50)) > 1e-9 || RS.gameAccuracy(null, accMoves, 'b') !== 50) { ok = false; console.log('FAIL accuracy'); }
-if (RS.gameRating(95.7, 20) !== 2200 || RS.gameRating(82.3, 20) !== 2000 || RS.gameRating(90, 5) !== null || RS.gameRating(60, 20) !== 1000) {
-  ok = false; console.log('FAIL game rating', RS.gameRating(95.7, 20), RS.gameRating(82.3, 20));
+// Moves in decided positions are left out of the accuracy (they say little about strength)
+const decMoves = [{ acc: 100, counted: true }, { acc: 25, counted: true, decided: true }, { acc: 40, counted: true }];
+if (Math.abs(RS.gameAccuracy(null, decMoves, 'w') - 2 / (1 / 100 + 1 / 40)) > 1e-9) { ok = false; console.log('FAIL decided accuracy', RS.gameAccuracy(null, decMoves, 'w')); }
+// Rating curve: the chess.com anchors hold, and the low end sinks disaster games
+// (deliberately throwing still reads 60-75% accuracy — the curve must not read that as club level)
+if (RS.gameRating(95.7, 20) !== 2200 || RS.gameRating(82.3, 20) !== 2000 || RS.gameRating(90, 5) !== null) {
+  ok = false; console.log('FAIL game rating anchors', RS.gameRating(95.7, 20), RS.gameRating(82.3, 20));
+}
+if (RS.gameRating(60, 20) !== 600 || RS.gameRating(61.8, 10) !== 650) {
+  ok = false; console.log('FAIL game rating low end', RS.gameRating(60, 20), RS.gameRating(61.8, 10));
 }
 // Notation repair: OCR-style noise (German pieces, 0/O, junk tokens, merged
 // half-moves, uppercase) must produce the same game as the clean notation

@@ -23,15 +23,17 @@
 
   // Game accuracy for one player: the harmonic mean of their move accuracies, so a few bad moves
   // pull it down more than a plain average would, without hiding them behind many easy moves.
-  // Each move counts as at least 25, so one lost piece can't zero the whole game.
-  //   moves: per ply, { acc, counted } (counted is false for book moves, which are skipped)
+  // Each move counts as at least 25, so one lost piece can't zero the whole game. Moves in decided
+  // positions (m.decided, see below) are left out: once the game is gone, hanging more material
+  // barely moves the evaluation, and such moves would otherwise read as near-perfect.
+  //   moves: per ply, { acc, counted, decided? } (counted is false for book moves, which are skipped)
   //   color: 'w' or 'b' (White plays the even plies)
   // whiteWin is unused and kept so older callers still work.
   function gameAccuracy(whiteWin, moves, color) {
     if (!moves.length) return null;
     let inv = 0, cnt = 0;
     moves.forEach((m, k) => {
-      if (!m || !m.counted || (k % 2 === 0) !== (color === 'w')) return;
+      if (!m || !m.counted || m.decided || (k % 2 === 0) !== (color === 'w')) return;
       inv += 1 / Math.max(m.acc, 25);
       cnt++;
     });
@@ -39,9 +41,11 @@
   }
 
   // Game rating from game accuracy, chess.com style: piecewise linear through these points. It is
-  // anchored on chess.com's review of a real game (95.7% read as 2200, 82.3% as 2000); the rest of
-  // the curve is shaped so beginners' accuracies (50-70%) land in beginner ratings.
-  const RATING_CURVE = [[0, 100], [30, 250], [40, 450], [50, 700], [60, 1000], [70, 1400], [77, 1700], [82, 2000],
+  // anchored on chess.com's review of a real game (95.7% read as 2200, 82.3% as 2000); below that it
+  // falls fast, because accuracy saturates once a game is lost — deliberately throwing a game still
+  // reads 60-75% (the blunders move an already-lost evaluation little), and such a game must not
+  // land in club-player territory.
+  const RATING_CURVE = [[0, 100], [25, 100], [35, 150], [45, 250], [55, 450], [65, 750], [72, 1100], [77, 1500], [82, 2000],
     [88, 2080], [93, 2150], [96, 2200], [98, 2350], [100, 2700]];
   const MIN_MOVES_FOR_RATING = 8;
   function gameRating(accuracy, counted) {
