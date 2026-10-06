@@ -8,8 +8,9 @@
   const RESULTS = /^(1-0|0-1|1\/2-1\/2|½-½|\*)$/i;
   // Characters OCR mixes up, compared case-insensitively (beyond identity).
   const CONFUSABLE = {
-    '0': 'o', 'o': '0q', 'q': '0g', 'g': 'q4', '1': 'li', 'l': '1', 'i': '1',
-    '5': 's', 's': '5', '8': 'b3', 'b': '86', '3': '8', '6': 'b', '2': 'z', 'z': '2', 'n': 'h', 'h': 'n', '4': 'g',
+    '0': 'o', 'o': '0cq', 'q': '0g', 'g': 'q4', '1': 'li', 'l': '1', 'i': '1',
+    '5': 'sy', 's': '5', '8': 'b3', 'b': '86', '3': '8', '6': 'b', '2': 'z', 'z': '2',
+    'n': 'h', 'h': 'n', '4': 'gf', 'f': '4', 'c': 'oe', 'e': 'c6', '6': 'be', 'y': '57', '7': 'y', 'z': '23', '3': '8z',
   };
 
   // Junk OCR that can never be a move (page headers, "e.p.", labels).
@@ -17,16 +18,22 @@
 
   const clean = (t) => t.replace(/[+#?!]/g, '').replace(/^0-0(-0)?$/, (m) => m.replace(/0/g, 'O'));
 
-  // Strip move numbers, score-sheet punctuation and OCR marks; normalise dashes
-  // and the multiplication sign to 'x'. Returns '' for tokens that cannot be a
-  // move (those are skipped with a warning, not treated as errors). Letters that
-  // survive here: files a-h, pieces KQRBN plus German S/T/L/D, castle O.
+  // Strip move numbers, score-sheet punctuation and OCR marks; normalise dashes,
+  // accents and the multiplication sign to 'x'. A '$' is read as '3' and a
+  // leading lowercase l/i as a mangled move number ('l.e4' → 'e4'). Returns
+  // null for tokens that cannot be a move (skipped, not errors). Two bare
+  // letters come back as { text, weak: true } — probably junk ("No"), but
+  // OCR noise like "ey" for e5 gets a chance to match a legal move first.
+  // Letters that survive: files a-h, pieces KQRBN plus German S/T/L/D, castle O.
   function cleanToken(t) {
-    let x = t.replace(/[–—−]/g, '-').replace(/[.,;:!?+#()"'*§×]/g, '').replace(/^\d+(?=[a-h0-9koq])/i, '');
-    if (!x || RESULTS.test(t) || /^\d+$/.test(x) || SKIPPABLE.test(x)) return '';
-    if (/[^a-h0-9=xoknqrbstld-]/i.test(x)) return '';
-    if (/^[a-z]{1,2}$/i.test(x) && !/^[o0]+$/i.test(x)) return ''; // "No", "B." — not a move
-    return x;
+    let x = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\$/g, '3')
+      .replace(/[–—−]/g, '-').replace(/[.,;:!?+#()"'*§×¢€£¥¤]/g, '')
+      .replace(/^\d+(?=[a-h0-9koq])/i, '').replace(/^l(?=[a-h0-9])|^i(?=[a-h0-9])/, '');
+    if (!x || RESULTS.test(t) || /^\d+$/.test(x) || SKIPPABLE.test(x)) return null;
+    if (/^[2-9?]-[0-9?]$|^[0-9?]-[2-9?]$/.test(x)) return null; // misread result ("7-0"), never castling
+    if (/[^a-h0-9=xoknqrbstldyz-]/i.test(x)) return null;
+    if (/^[a-z]{1,2}$/i.test(x) && !/^[o0]+$/i.test(x)) return { text: x, weak: true };
+    return { text: x, weak: false };
   }
 
   // German piece letters: S(f3)→N, T(a8)→R, L(c4)→B, D(d8)→Q, and the same for
@@ -49,13 +56,19 @@
   function editCost(a, b) {
     if (a === b) return 0;
     if (Math.abs(a.length - b.length) > 1) return null;
-    // Short tokens (e4, Nf3) only tolerate a single confusable substitution —
-    // never a plain flip (e4 vs e5) or an inserted/dropped character.
+    // Short tokens (e4, Nf3) only tolerate character substitutions that OCR
+    // actually makes — never a plain flip (e4 vs e5) or a changed length.
+    // The cost is the number of differing characters, so the closest reading wins.
     if (Math.min(a.length, b.length) < 4) {
       if (a.length !== b.length) return null;
-      let at = -1;
-      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) { if (at >= 0) return null; at = i; }
-      return at >= 0 && (CONFUSABLE[a[at]] || '').includes(b[at]) ? 1 : null;
+      let diffs = 0, allConfusable = true;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) {
+          diffs++;
+          if (!(CONFUSABLE[a[i]] || '').includes(b[i])) allConfusable = false;
+        }
+      }
+      return diffs > 0 && diffs <= 2 && allConfusable ? diffs : null;
     }
     // Otherwise: Levenshtein distance with a confusion-aware substitution cost.
     let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
@@ -79,7 +92,7 @@
       if (hit) return hit.m; // SAN disambiguates, so an exact match is unique
     }
     // No exact match: accept a single unambiguous near neighbour of either reading.
-    let best = null, bestCost = 2, ties = 0;
+    let best = null, bestCost = 3, ties = 0;
     for (const { m, sn } of cands) {
       let c = null;
       for (const w of readings) {
@@ -95,7 +108,7 @@
 
   // OCR sometimes glues two half-moves together ("e4e5"). Try every split point.
   function trySplit(s, token, E) {
-    if (token.length < 5) return null;
+    if (token.length < 4) return null;
     for (let i = 2; i < token.length - 1; i++) {
       const m1 = matchMove(s, token.slice(0, i), E);
       if (!m1) continue;
@@ -122,11 +135,12 @@
     let s = E.newGame();
     const sans = [];
     for (const raw of toks) {
-      const token = cleanToken(raw);
-      if (!token) { warnings.push(`Skipped "${raw}"`); continue; }
-      const m = matchMove(s, token, E);
+      const c = cleanToken(raw);
+      if (!c) { warnings.push(`Skipped "${raw}"`); continue; }
+      let m = matchMove(s, c.text, E);
+      if (!m && c.weak) { warnings.push(`Skipped "${raw}"`); continue; } // "No", "B." junk
       if (m) { sans.push(E.san(s, m)); s = E.makeMove(s, m); continue; }
-      const split = trySplit(s, token, E);
+      const split = trySplit(s, c.text, E);
       if (split) {
         sans.push(E.san(s, split[0]), E.san(split[1], split[2]));
         s = E.makeMove(split[1], split[2]);
@@ -134,7 +148,8 @@
         continue;
       }
       const n = Math.floor(sans.length / 2) + 1;
-      throw new Error(`Move ${n}${sans.length % 2 ? '…' : '.'}: "${raw}" is not readable as a legal move. Fix it in the text and try again.`);
+      const after = sans.length ? ` after "${sans[sans.length - 1]}"` : '';
+      throw new Error(`Move ${n}${sans.length % 2 ? '…' : '.'}: "${raw}" is not readable as a legal move${after}. Fix it in the text and try again.`);
     }
     if (!sans.length) throw new Error('No moves found in the text.');
 

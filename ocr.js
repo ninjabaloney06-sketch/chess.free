@@ -64,6 +64,10 @@
       for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= n * 0.02) { lo = v; break; } }
       acc = 0;
       for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= n * 0.02) { hi = v; break; } }
+      // A mostly-empty photo puts both percentiles in the paper tone; keep the
+      // stretch window sane so the contrast stretch can only widen, not invert.
+      lo = Math.min(lo, 100);
+      hi = Math.max(hi, 180);
       const range = Math.max(1, hi - lo);
       for (let i = 0; i < p.length; i += 4) {
         const v = Math.max(0, Math.min(255, Math.round(((p[i] - lo) / range) * 255)));
@@ -76,9 +80,18 @@
 
   // fileOrBlob: the photo. onProgress(status, 0..1) drives the UI.
   function recognize(fileOrBlob, onProgress) {
-    return getWorker(onProgress)
-      .then((w) => preprocess(fileOrBlob).then((img) => w.recognize(img)))
-      .then((res) => res.data.text || '');
+    return getWorker(onProgress).then((w) =>
+      preprocess(fileOrBlob).then((img) =>
+        w.recognize(img).then((res) => {
+          const text = res.data.text || '';
+          // Handwriting scatters across the page: if the default page layout
+          // search finds nothing, retry once in sparse-text mode.
+          if (text.trim()) return text;
+          return w.setParameters({ tessedit_pageseg_mode: '11' })
+            .then(() => w.recognize(img))
+            .then((r2) => r2.data.text || '')
+            .then((t2) => w.setParameters({ tessedit_pageseg_mode: '3' }).then(() => t2));
+        })));
   }
 
   root.NotationOCR = { recognize };
