@@ -395,7 +395,7 @@
 
 <script src="engine.js?v=2"></script>
 <script src="ai.js?v=2"></script>
-<script src="review-stats.js?v=4"></script>
+<script src="review-stats.js?v=5"></script>
 <script src="openings.js?v=1"></script>
 <script src="openings-core.js?v=1"></script>
 <script src="notation.js?v=5"></script>
@@ -1220,13 +1220,13 @@
     $('deepReview').textContent = review.deep ? 'Deep review done' : deepCached ? 'Deep review' : 'Deep review (≈99 MB download)';
     $('engineLabel').textContent = 'Engine: ' + engineLabel();
 
-    // Accuracy and game rating over the game's main line (book moves don't count)
+    // Accuracy and game rating over the game's main line (book and decided moves don't count)
     const moves = pos.slice(1).map((_, k) => review.cls[k] || null);
     const cpLoss = moves.map((m) => (m && m.counted && !m.decided ? m.cpLoss : null));
     const stats = {};
     for (const c of ['w', 'b']) {
       const acc = RS.gameAccuracy(null, moves, c);
-      const counted = moves.filter((m, k) => m && m.counted && (k % 2 === 0) === (c === 'w')).length;
+      const counted = moves.filter((m, k) => m && m.counted && !m.decided && (k % 2 === 0) === (c === 'w')).length;
       const al = RS.acpl(cpLoss, c);
       stats[c] = { acc, rating: RS.gameRating(acc, counted), acpl: al, counted };
     }
