@@ -308,6 +308,7 @@
       <div class="pane-head">
         <button class="icon-btn" id="rvBack" title="Back to the summary">←</button>
         <div class="title">Game Review</div>
+        <button class="icon-btn" id="savePgn" title="Save PGN" aria-label="Save PGN"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 17v3h16v-3"/></svg></button>
         <button class="icon-btn" id="exitReview" title="Exit review">✕</button>
       </div>
       <div class="coach"><div class="face" id="coachFace"></div><div class="bubble" id="comment"></div></div>
@@ -1179,14 +1180,18 @@
     review.cls.forEach((x, k) => { if (x && x.counted && x.loss >= 10 && (w < 0 || x.loss > review.cls[w].loss)) w = k; });
     return w;
   }
-  function graphSVG(pts, n, H) {
+  function graphSVG(pts, n, H, kx = 1, ky = 1) {
     const W = 300;
     let svg = `<rect width="${W}" height="${H}" fill="#403d39"/>`;
     if (pts.length) svg += `<path d="M0 ${H} ${pts.map((p) => `L${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')} L${pts[pts.length - 1][0].toFixed(1)} ${H} Z" fill="#fff"/>`;
     svg += `<line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke="#888" stroke-width=".6" stroke-dasharray="3 3"/>`;
     review.cls.forEach((x, k) => {
       if (x && ['blunder', 'mistake', 'miss', 'brilliant', 'great'].includes(x.c) && pts[k + 1]) {
-        svg += `<circle cx="${pts[k + 1][0]}" cy="${pts[k + 1][1]}" r="3.2" fill="${CLS[x.c].color}" stroke="#222" stroke-width=".6"/>`;
+        // The graph stretches to the panel width (preserveAspectRatio=none), so a
+        // fixed-radius circle smears into a wide pill. Counter-scale the dot to
+        // keep it round on screen.
+        const rx = (4 / (kx || 1)).toFixed(2), ry = (4 / (ky || 1)).toFixed(2);
+        svg += `<ellipse cx="${pts[k + 1][0]}" cy="${pts[k + 1][1]}" rx="${rx}" ry="${ry}" fill="${CLS[x.c].color}" stroke="#222" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
       }
     });
     const mainIdx = review.cur.line < 0 ? review.cur.k : review.lines[review.cur.line].start;
@@ -1294,7 +1299,8 @@
       const cp = pos[k].turn === 'w' ? an.score : -an.score;
       pts.push([n > 1 ? (k / (n - 1)) * 300 : 0, H - (winPct(cp) / 100) * H]);
     }
-    $(steps ? 'graph2' : 'graph').innerHTML = graphSVG(pts, n, H);
+    const gel = $(steps ? 'graph2' : 'graph');
+    gel.innerHTML = graphSVG(pts, n, H, (gel.clientWidth || 300) / 300, (gel.clientHeight || H) / H);
 
     const atStart = review.cur.line < 0 && review.cur.k === 0;
     const atEnd = review.cur.line < 0 ? review.cur.k === n - 1 : review.cur.k === review.lines[review.cur.line].moves.length;
@@ -1465,6 +1471,29 @@
     if (source !== 'library') saveGame($('pgnInput').value, parsed, source || 'pgn');
     startReview();
   }
+
+  // Save the current game (played or imported) as a downloadable PGN file
+  function buildPGN() {
+    const st = gameStatus();
+    const result = st.over ? (st.winner ? (st.winner === 'w' ? '1-0' : '0-1') : '1/2-1/2') : '*';
+    const tags = { ...(imported || {}) };
+    tags.White = imported && imported.White && imported.White !== '?' ? imported.White : playerInfo('w').name;
+    tags.Black = imported && imported.Black && imported.Black !== '?' ? imported.Black : playerInfo('b').name;
+    tags.Result = imported && imported.Result ? imported.Result : result;
+    tags.Date = imported && imported.Date ? imported.Date : new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+    let mt = '';
+    sans.forEach((sn, i) => { if (i % 2 === 0) mt += (i / 2 + 1) + '. '; mt += sn + ' '; });
+    return Object.entries(tags).map(([k, v]) => `[${k} "${String(v).replace(/"/g, '')}"]`).join('\n')
+      + '\n\n' + mt.trim() + (tags.Result !== '*' ? ' ' + tags.Result : '');
+  }
+  $('savePgn').onclick = () => {
+    const pgn = buildPGN();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([pgn], { type: 'application/x-chess-pgn' }));
+    a.download = ((playerInfo('w').name + ' vs ' + playerInfo('b').name).replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'game').slice(0, 60) + '.pgn';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
 
   // ---- Import: My games (IndexedDB, browser-only) ----
   function saveGame(pgn, parsed, source) {
