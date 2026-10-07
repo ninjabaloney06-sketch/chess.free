@@ -223,8 +223,14 @@
   .game .g-main b { font-size: .92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .game .g-main span { font-size: .78rem; color: var(--muted); }
   .game .g-btns { display: flex; gap: 6px; flex: none; }
-  .game .g-btns button { padding: 7px 10px; font-size: .85rem; }
+  .game .g-btns button { width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
   .game .g-btns button.danger.armed { background: var(--danger); color: #fff; }
+  .games-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .games-head .section { flex: 1; margin: 0; }
+  .games-head select { width: auto; padding: 6px 10px; font-size: .82rem; }
+  .save-bar { flex: none; display: flex; gap: 6px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .save-bar[hidden] { display: none; }
+  .save-bar input { flex: 1; min-width: 0; font: inherit; font-size: .9rem; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
 
   /* Narrow screens: board on top, panel below */
   @media (max-width: 960px) {
@@ -307,9 +313,14 @@
       <div class="pane-head">
         <button class="icon-btn" id="rvBack" title="Back to the summary">←</button>
         <div class="title">Game Review</div>
-        <button class="icon-btn" id="savePgn" title="Save PGN" aria-label="Save PGN"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 17v3h16v-3"/></svg></button>
+        <button class="icon-btn" id="savePgn" title="Save to My games" aria-label="Save to My games"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15H5zM8 3v5h7V3M8 21v-7h8v7"/></svg></button>
         <button class="icon-btn" id="exitReview" title="Exit review">✕</button>
       </div>
+      <form class="save-bar" id="saveBar" hidden>
+        <input id="saveName" maxlength="25" placeholder="Game name" aria-label="Game name" autocomplete="off">
+        <button class="primary" type="submit">Save</button>
+        <button type="button" id="saveCancel">Cancel</button>
+      </form>
       <div class="coach"><div class="face" id="coachFace"></div><div class="bubble" id="comment"></div></div>
       <div class="pane-body" id="rvBody">
         <div id="rvSummary">
@@ -348,7 +359,13 @@
         <textarea id="pgnInput" spellcheck="false" placeholder="[Event &quot;Live Chess&quot;]&#10;...&#10;1. e4 e5 2. Nf3 ..."></textarea>
         <p class="err" id="pgnError" hidden></p>
 
-        <div class="section">My games</div>
+        <div class="games-head">
+          <div class="section">My games</div>
+          <select id="gamesSort" aria-label="Sort games">
+            <option value="new">Newest first</option>
+            <option value="old">Oldest first</option>
+          </select>
+        </div>
         <div id="gamesList"></div>
       </div>
       <div class="pane-foot">
@@ -770,6 +787,7 @@
   let tab = 'play';
   function setTab(t) { tab = t; render(); }
   let imported = null; // PGN header tags of an imported game
+  let savedId = null; // My games record of the game on the board, if it has one
 
   const positions = () => history.concat([game]);
   const aiColor = () => (opponent === 'bot' ? other(myColor) : null);
@@ -784,7 +802,8 @@
     thinking = false;
     game = E.newGame();
     history = []; sans = []; ucis = [];
-    selected = null; endShown = false; resigned = null; review = null; imported = null;
+    selected = null; endShown = false; resigned = null; review = null; imported = null; savedId = null;
+    $('saveBar').hidden = true;
     closeModal('endModal'); closeModal('promoModal');
     myColor = side === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : side;
     flipped = opponent === 'bot' && myColor === 'b';
@@ -1470,10 +1489,11 @@
     imported = parsed.tags;
     endShown = true;
     if (source !== 'library') saveGame($('pgnInput').value, parsed, source || 'pgn');
+    else savedId = libraryId;
     startReview();
   }
 
-  // Save the current game (played or imported) as a downloadable PGN file
+  // The current game (played or imported) as PGN text
   function buildPGN() {
     const st = gameStatus();
     const result = st.over ? (st.winner ? (st.winner === 'w' ? '1-0' : '0-1') : '1/2-1/2') : '*';
@@ -1487,39 +1507,77 @@
     return Object.entries(tags).map(([k, v]) => `[${k} "${String(v).replace(/"/g, '')}"]`).join('\n')
       + '\n\n' + mt.trim() + ' ' + tags.Result;
   }
-  $('savePgn').onclick = () => {
-    const pgn = buildPGN();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([pgn], { type: 'application/x-chess-pgn' }));
-    a.download = ((playerInfo('w').name + ' vs ' + playerInfo('b').name).replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'game').slice(0, 60) + '.pgn';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  const ICON_REVIEW = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg>';
+  const ICON_DELETE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+  const defaultName = (white, black) => (white + ' – ' + black).slice(0, 25);
+
+  // Save to My games under a name of the player's choosing (up to 25 characters)
+  $('savePgn').onclick = async () => {
+    const bar = $('saveBar');
+    if (!bar.hidden) { bar.hidden = true; return; }
+    let name = defaultName(playerInfo('w').name, playerInfo('b').name);
+    if (savedId) { try { const rec = await GameDB.get(savedId); if (rec) name = rec.name || defaultName(rec.white, rec.black); } catch (e) { /* new record */ } }
+    $('saveName').value = name;
+    bar.hidden = false;
+    $('saveName').focus(); $('saveName').select();
+  };
+  $('saveCancel').onclick = () => { $('saveBar').hidden = true; };
+  $('saveBar').onsubmit = async (e) => {
+    e.preventDefault();
+    const name = $('saveName').value.trim().slice(0, 25);
+    if (!name) { $('saveName').focus(); return; }
+    try {
+      const rec = savedId ? await GameDB.get(savedId) : null;
+      if (rec) {
+        rec.name = name;
+        await GameDB.save(rec);
+      } else {
+        const pgn = buildPGN(), parsed = E.parsePGN(pgn);
+        savedId = newId();
+        await GameDB.save(gameRecord(savedId, pgn, parsed, imported ? 'pgn' : 'played', name));
+      }
+      $('saveBar').hidden = true;
+      renderGames();
+    } catch (err) {
+      $('saveName').setCustomValidity('Could not save: ' + (err.message || 'browser storage unavailable'));
+      $('saveName').reportValidity();
+      $('saveName').setCustomValidity('');
+    }
   };
 
   // ---- Import: My games (IndexedDB, browser-only) ----
-  async function saveGame(pgn, parsed, source) {
-    const tags = parsed.tags;
-    // Re-reviewing the same game (twice, or after loading it from the list) doesn't save a copy.
-    try { if ((await GameDB.list()).some((r) => r.pgn.trim() === pgn.trim())) return; } catch (e) { return; }
-    GameDB.save({
-      id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      savedAt: Date.now(),
-      pgn,
-      white: tags.White || 'White', black: tags.Black || 'Black',
-      result: tags.Result || '*', moves: parsed.moves.length, source,
-    }).then(renderGames).catch(() => {});
+  let libraryId = null;
+  const newId = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  function gameRecord(id, pgn, parsed, source, name) {
+    const tags = parsed.tags, white = tags.White || 'White', black = tags.Black || 'Black';
+    return {
+      id, savedAt: Date.now(), pgn, name: name || defaultName(white, black),
+      white, black, result: tags.Result || '*', moves: parsed.moves.length, source,
+    };
   }
+  async function saveGame(pgn, parsed, source) {
+    // Re-reviewing the same game (twice, or after loading it from the list) doesn't save a copy.
+    let rows;
+    try { rows = await GameDB.list(); } catch (e) { return; }
+    const dup = rows.find((r) => r.pgn.trim() === pgn.trim());
+    if (dup) { savedId = dup.id; return; }
+    savedId = newId();
+    GameDB.save(gameRecord(savedId, pgn, parsed, source)).then(renderGames).catch(() => {});
+  }
+  const fmtWhen = (t) => new Date(t).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   async function renderGames() {
     const el = $('gamesList');
     let rows;
     try { rows = await GameDB.list(); } catch (e) { return; }
+    if ($('gamesSort').value === 'old') rows.reverse();
     if (!rows.length) { el.innerHTML = '<p class="hint" style="margin:0">No saved games yet.</p>'; return; }
     el.innerHTML = rows.map((r) => `<div class="game" data-id="${r.id}">
-      <div class="g-main"><b>${esc(r.white)} – ${esc(r.black)}</b>
-      <span>${new Date(r.savedAt).toLocaleDateString()} · ${esc(r.result)} · ${Math.ceil(r.moves / 2)} moves</span></div>
-      <div class="g-btns"><button data-a="go">Review</button><button data-a="pgn">PGN</button>
-      <button class="danger" data-a="del" title="Delete">✕</button></div></div>`).join('');
+      <div class="g-main"><b>${esc(r.name || defaultName(r.white, r.black))}</b>
+      <span>${fmtWhen(r.savedAt)} · ${esc(r.white)} – ${esc(r.black)} · ${esc(r.result)} · ${Math.ceil(r.moves / 2)} moves</span></div>
+      <div class="g-btns"><button data-a="go" title="Review" aria-label="Review">${ICON_REVIEW}</button>
+      <button class="danger" data-a="del" title="Delete" aria-label="Delete">${ICON_DELETE}</button></div></div>`).join('');
   }
+  $('gamesSort').onchange = renderGames;
   $('gamesList').addEventListener('click', async (e) => {
     const b = e.target.closest('button'), row = e.target.closest('.game');
     if (!b || !row) return;
@@ -1528,16 +1586,16 @@
     const a = b.dataset.a;
     if (a === 'go') {
       $('pgnInput').value = rec.pgn;
+      libraryId = rec.id;
       importPGN('library');
-    } else if (a === 'pgn') {
-      $('pgnInput').value = rec.pgn;
     } else if (a === 'del') {
       if (!b.classList.contains('armed')) {
-        b.classList.add('armed'); b.textContent = 'Sure?';
-        setTimeout(() => { b.classList.remove('armed'); b.textContent = '✕'; }, 3000);
+        b.classList.add('armed'); b.title = 'Click again to delete';
+        setTimeout(() => { b.classList.remove('armed'); b.title = 'Delete'; }, 3000);
         return;
       }
       await GameDB.del(rec.id);
+      if (savedId === rec.id) savedId = null;
       renderGames();
     }
   });
