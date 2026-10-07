@@ -51,21 +51,36 @@ A complete chess game on a stone board with hand-drawn black and white pieces.
 
 ## Bot ratings
 
-Levels 1000–2200 are the built-in engine with a search depth limit, plus random noise added to move scores at the weaker levels. The 2400 level is Stockfish with its strength limiter. Each level was measured by playing matches against Stockfish 16 with `UCI_LimitStrength`. The games start from 12 balanced openings, and each opening is played with both colors. The ratings are on Stockfish's Elo scale, which is calibrated against computer engines. They are rough guides to human ratings, not exact equivalents.
+All 8 levels are Stockfish 19 Lite with its strength limiter (`UCI_LimitStrength` / `UCI_Elo`) and a per-level move time. Stockfish's `UCI_Elo` cannot go below 1320, so the 1000 level additionally plays a uniformly random legal move 12% of the time (and 1000–1200 sit at the floor). Each level's rating is measured by playing matches against a reference Stockfish with `UCI_LimitStrength`. The games start from 12 balanced openings, and each opening is played with both colors. The ratings are on Stockfish's Elo scale, which is calibrated against computer engines. They are rough guides to human ratings, not exact equivalents, and measuring against Stockfish's own limiter only shows the levels are consistent with that scale.
+
+Measured against human-style numbers (each level playing itself from 8 openings, 20 sides, every move analysed by full-strength Stockfish), the limiter barely changes how a level plays below about 1800:
+
+| Level | Average centipawn loss | Blunders per game |
+|---|---|---|
+| 1000 | 92 | 2.9 |
+| 1200 | 52 | 1.6 |
+| 1400 | 48 | 1.8 |
+| 1600 | 45 | 2.6 |
+| 1800 | 42 | 1.7 |
+| 2000 | 31 | 1.1 |
+| 2200 | 32 | 1.2 |
+| 2400 | 22.5 | 0.35 |
+
+As a rough rule of thumb (not a measured human baseline), 40–50 centipawns a move is strong-club play, so 1200–1800 play alike, at about that strength, and so do 2000 and 2200. Only the 1000 level, through its random moves, plays like a beginner. Adding random moves to 1200–1600 as well would spread them out; for now every level above 1000 is pure Stockfish.
 
 | Level | Setting | Measured rating | Games |
 |---|---|---|---|
-| 1000 | depth 1, noise 90 | ≈ 1000 (pooled over noise 80–100) | 120 vs SF 1320 |
-| 1200 | depth 2, noise 150 | ≈ 1250 (≈ 1165 at noise 165) | 32 + 24 vs SF 1320 |
-| 1400 | depth 3, noise 75 | ≈ 1410 | 24 vs SF 1500, 24 vs SF 1400 |
-| 1600 | depth 3, noise 15 | ≈ 1565 | 40 vs SF 1600 |
-| 1800 | depth 4 | ≈ 1825 | 40 vs SF 1800 |
-| 2000 | depth 5 | ≈ 2070 | 44 vs SF 2000 |
-| 2200 | depth 6 | ≈ 2210 | 44 vs SF 2200 |
-| 2400 | Stockfish 19 Lite, `UCI_Elo` 2540, 0.5 s per move | ≈ 2410 | 40 vs SF 2400 |
+| 1000 | Stockfish, `UCI_Elo` 1320, 0.15 s per move, 12% random moves | ≈ 980 | 40 vs SF 1320 |
+| 1200 | Stockfish, `UCI_Elo` 1320, 0.15 s per move | ≈ 1290 | 40 vs SF 1320 |
+| 1400 | Stockfish, `UCI_Elo` 1490, 0.25 s per move | ≈ 1480 | 40 vs SF 1500 |
+| 1600 | Stockfish, `UCI_Elo` 1690, 0.25 s per move | ≈ 1580 | 40 vs SF 1600 |
+| 1800 | Stockfish, `UCI_Elo` 1890, 0.25 s per move | ≈ 1780 | 40 vs SF 1800 |
+| 2000 | Stockfish, `UCI_Elo` 2090, 0.25 s per move | ≈ 2030 | 40 vs SF 2000 |
+| 2200 | Stockfish, `UCI_Elo` 2290, 0.25 s per move | ≈ 2240 | 40 vs SF 2200 |
+| 2400 | Stockfish 19 Lite, `UCI_Elo` 2540, 0.5 s per move | ≈ 2400 | 40 vs SF 2400 (JS build; native SF measured ≈ 2410) |
 | Review engine | Stockfish 19 Lite, full strength, 0.5 s per position | ≈ 3400 (26 wins, 3 draws, 1 loss) | 30 vs SF 3000 at 1 s per move |
 
-Each figure is accurate to about ±70–100 Elo. Stockfish's `UCI_Elo` cannot go below 1320, so the 1000 and 1200 levels are extrapolated from their score against that floor. Native Stockfish played at 150 ms per move, except against the review engine, where it had 1 s per move so its 3000 setting could reach full depth. Stockfish Lite's own `UCI_Elo` reads low: set to 2400 it measured ≈ 2310, so the 2400 level uses 2540.
+The eight play levels were measured against the same JS build acting as the reference (`node calibrate.js '{"engine":"sfjs",...}' <refElo> 40 stockfish/stockfish-19-lite-single.js`), games from 12 balanced openings with colors reversed. Each level is within ±150 of its label on that scale. Stockfish Lite's own `UCI_Elo` reads about 90–140 low at the top end: set to 2540 it plays at ≈ 2400, so the 2400 level uses 2540.
 
 ## Matching chess.com
 
