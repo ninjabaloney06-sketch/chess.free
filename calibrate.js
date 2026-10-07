@@ -2,7 +2,8 @@
 // Usage: node calibrate.js <level> <stockfishElo> <games> [refMovetimeMs] [stockfishPath]
 //   <level> is a built-in level's Elo (e.g. 1800), a JSON built-in level ({"maxDepth":4,...}),
 //   or a JSON Stockfish.js config: {"engine":"sfjs","elo":2400} (strength-limited) or
-//   {"engine":"sfjs","movetime":500} (full strength).
+//   {"engine":"sfjs","movetime":500} (full strength). A "blunder" field (0..1) makes the sfjs
+//   bot play a uniformly random legal move with that probability.
 // Each opening is played twice with colors reversed. Prints W/D/L and a performance rating.
 const path = require('path');
 const E = require('./engine.js');
@@ -41,7 +42,7 @@ async function initUci(eng, opts) {
 const uci = (m) => E.squareName(m.from) + E.squareName(m.to) + (m.promo || '');
 
 (async () => {
-  const ref = uciEngine(sfPath, []);
+  const ref = /\.js$/.test(sfPath) ? uciEngine('node', [sfPath]) : uciEngine(sfPath, []);
   await initUci(ref, { UCI_LimitStrength: true, UCI_Elo: sfElo, Hash: 64 });
 
   let bot = null;
@@ -49,8 +50,12 @@ const uci = (m) => E.squareName(m.from) + E.squareName(m.to) + (m.promo || '');
     bot = uciEngine('node', [path.join(__dirname, 'stockfish', 'stockfish-19-lite-single.js')]);
     await initUci(bot, level.elo ? { UCI_LimitStrength: true, UCI_Elo: level.elo, Hash: 32 } : { Hash: 32 });
   }
-  const botMove = async (hist) => {
+  const botMove = async (hist, pos) => {
     if (!bot) return AI.think({ fen: E.START_FEN, moves: hist, ...level }).move;
+    if (level.blunder && Math.random() < level.blunder) {
+      const list = E.legalMoves(pos);
+      return uci(list[Math.floor(Math.random() * list.length)]);
+    }
     bot.send(`position startpos moves ${hist.join(' ')}`);
     bot.send(`go movetime ${level.movetime || 300}`);
     return (await bot.waitFor(/bestmove (\S+)/))[1];
@@ -68,7 +73,7 @@ const uci = (m) => E.squareName(m.from) + E.squareName(m.to) + (m.promo || '');
     if (bot) bot.send('ucinewgame');
     while (!E.status(s).over && hist.length < 400) {
       let mv;
-      if ((s.turn === 'w') === botWhite) mv = await botMove(hist);
+      if ((s.turn === 'w') === botWhite) mv = await botMove(hist, s);
       else {
         ref.send(`position startpos moves ${hist.join(' ')}`);
         ref.send(`go movetime ${refMovetime}`);

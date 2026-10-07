@@ -712,13 +712,31 @@
   // always gets the same review, whatever the device or its load (about 0.6 s per position on a laptop).
   const REVIEW_NODES = 300000; // Stockfish 19 Lite (built-in fallback: 900 ms)
   const DEEP_REVIEW_NODES = 1000000; // full Stockfish 19 in deep review
-  const LEVELS = AI.LEVELS.concat([
+  // Every level is Stockfish Lite behind its own UCI_Elo and move time: its limiter plays human-like
+  // weak chess, which the built-in depth+noise engine never did (quiescence search means it never
+  // hangs pieces the way beginners do). Stockfish's UCI_Elo floor is 1320, so the 1000 level also
+  // plays a random legal move 12% of the time. `fallback` is the matching built-in config from
+  // AI.LEVELS (indices line up: [0]..[6] are the 1000–2200 presets), used when Stockfish cannot
+  // load (e.g. over file://).
+  const LEVELS = [
+    { elo: 1000, engine: 'stockfish', uciElo: 1320, movetime: 150, blunder: 0.12, fallback: AI.LEVELS[0] },
+    { elo: 1200, engine: 'stockfish', uciElo: 1320, movetime: 150, fallback: AI.LEVELS[1] },
+    { elo: 1400, engine: 'stockfish', uciElo: 1490, movetime: 250, fallback: AI.LEVELS[2] },
+    { elo: 1600, engine: 'stockfish', uciElo: 1690, movetime: 250, fallback: AI.LEVELS[3] },
+    { elo: 1800, engine: 'stockfish', uciElo: 1890, movetime: 250, fallback: AI.LEVELS[4] },
+    { elo: 2000, engine: 'stockfish', uciElo: 2090, movetime: 250, fallback: AI.LEVELS[5] },
+    { elo: 2200, engine: 'stockfish', uciElo: 2290, movetime: 250, fallback: AI.LEVELS[6] },
     // Stockfish Lite's Elo limiter reads about 140 low, so 2540 here plays at 2400 (measured; see README).
     { elo: 2400, engine: 'stockfish', uciElo: 2540, movetime: 500, fallback: { maxDepth: 64, timeMs: 1500 } },
-  ]);
+  ];
 
   async function botMove(level, moves) {
     const g = gen;
+    if (level.blunder && Math.random() < level.blunder) {
+      const pool = E.legalMoves(game);
+      const m = pool[Math.floor(Math.random() * pool.length)];
+      return g === gen && m ? uciOf(m) : null;
+    }
     let r = null;
     if (level.engine === 'stockfish' && await stockfish.load()) {
       r = await stockfish.request({ moves, elo: level.uciElo, movetime: level.movetime });
