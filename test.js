@@ -144,7 +144,7 @@ if (!/1\. e4 e5 2\. Nf3 Nc6 3\. Bb5 a6 4\. Ba4 Nf6 5\. O-O Be7 1-0$/.test(marker
 // is skipped with a warning — the game then starts at Nf3, and later moves
 // that need the lost e-pawn pushed are correctly rejected.
 const bradley = NT.toPGN('1.e4¢e5 2. Nfz Nee 3. Bb5 ae 4. Ba4 Nfe 5. 0-0 Bey 7-0', E);
-if (!/1\. Nf3 Nc6$/.test(bradley.pgn) || bradley.warnings.length < 2) {
+if (!/1\. Nf3 Nc6 \*$/.test(bradley.pgn) || bradley.warnings.length < 2) {
   ok = false; console.log('FAIL notation bradley', bradley.pgn, bradley.warnings);
 }
 // Chalkboard-style accents: Nfé for Nf6, ab for a6
@@ -153,9 +153,9 @@ if (!/1\. e4 e5 2\. Nf3 Nc6 3\. Bb5 a6 4\. Ba4 Nf6 5\. O-O Be7 1-0$/.test(chalk.
   ok = false; console.log('FAIL notation chalkboard', chalk.pgn);
 }
 const lower = NT.toPGN('1. e4 e5 2. nf3 nc6', E);
-if (!/1\. e4 e5 2\. Nf3 Nc6$/.test(lower.pgn)) { ok = false; console.log('FAIL notation lowercase', lower.pgn); }
+if (!/1\. e4 e5 2\. Nf3 Nc6 \*$/.test(lower.pgn)) { ok = false; console.log('FAIL notation lowercase', lower.pgn); }
 const junk = NT.toPGN('Runde 5 1. e4 e5 White 2. Nf3 Nc6', E);
-if (junk.warnings.length !== 2 || !/2\. Nf3 Nc6$/.test(junk.pgn)) { ok = false; console.log('FAIL notation junk', junk.warnings, junk.pgn); }
+if (junk.warnings.length !== 2 || !/2\. Nf3 Nc6 \*$/.test(junk.pgn)) { ok = false; console.log('FAIL notation junk', junk.warnings, junk.pgn); }
 let notThrow = false;
 // Mid-game failure with a later move of the same color still legal: throws.
 try { NT.toPGN('1. e4 e5 2. Nf9 Bb5', E); } catch (e) { notThrow = /Nf9/.test(e.message); }
@@ -163,15 +163,33 @@ if (!notThrow) { ok = false; console.log('FAIL notation error message'); }
 // An unreadable LAST token only stops the parse with a warning (the moves
 // before it stay usable); junk after the game (result block) is dropped too.
 const tail = NT.toPGN('1. e4 e5 2. Nf3 Nc6 3. Bb5 Nf6 CROSS CORRECT RESULT', E);
-if (!/1\. e4 e5 2\. Nf3 Nc6 3\. Bb5 Nf6$/.test(tail.pgn) || !tail.warnings.length) {
+if (!/1\. e4 e5 2\. Nf3 Nc6 3\. Bb5 Nf6 \*$/.test(tail.pgn) || !tail.warnings.length) {
   ok = false; console.log('FAIL notation trailing', tail.pgn, tail.warnings);
 }
 // Descriptive notation (pre-1980 scoresheets): files named from the mover's
 // side, captures by victim piece, OO castling
 const dqgd = NT.toPGN('1 NKB3 PQ4 2 PQ4 NKB3 3 PQB4 PK3 4 NQB3 BK2 5 PKN3 OO', E);
-if (!/1\. Nf3 d5 2\. d4 Nf6 3\. c4 e6 4\. Nc3 Be7 5\. g3 O-O$/.test(dqgd.pgn)) {
+if (!/1\. Nf3 d5 2\. d4 Nf6 3\. c4 e6 4\. Nc3 Be7 5\. g3 O-O \*$/.test(dqgd.pgn)) {
   ok = false; console.log('FAIL notation descriptive', dqgd.pgn);
 }
+// One SAN move that looks descriptive (Qb3 = "queen to bishop 3") must not
+// switch the game to descriptive readings.
+const qb3 = NT.toPGN('1. e4 e5 2. c3 Nc6 3. Qb3 Nf6', E);
+if (!/3\. Qb3 Nf6 \*$/.test(qb3.pgn)) { ok = false; console.log('FAIL notation Qb3 stays SAN', qb3.pgn); }
+// Case decides piece vs pawn: Bxc5 is the bishop even when bxc5 is legal; German Dxe5 is the queen.
+const bxc5 = NT.toPGN('1. e4 c5 2. b4 Nc6 3. d3 a6 4. Be3 e6 5. Bxc5', E);
+if (!/5\. Bxc5 \*$/.test(bxc5.pgn)) { ok = false; console.log('FAIL notation Bxc5 vs bxc5', bxc5.pgn); }
+const dxe5 = NT.toPGN('1. e4 e5 2. Dh5 Nc6 3. d4 a6 4. Dxe5', E);
+if (!/4\. Qxe5\+? \*$/.test(dxe5.pgn)) { ok = false; console.log('FAIL notation German Dxe5', dxe5.pgn); }
+// A repaired (fuzzy) move is reported, not silently changed.
+const fix = NT.toPGN('1. e4 e5 2. Nf3 Nc6 3. e4', E);
+const caseFix = NT.toPGN('1. b4 e5 2. Ba3 d6 3. e3 c5 4. Bxc5', E); // bishop blocked by b4: becomes bxc5, reported
+if (!/4\. bxc5 \*$/.test(caseFix.pgn) || !caseFix.warnings.some((w) => /Read "Bxc5" as bxc5/.test(w))) { ok = false; console.log('FAIL notation case repair warning', caseFix.pgn, caseFix.warnings); }
+
+if (!fix.warnings.some((w) => /Read "e4" as c4/.test(w))) { ok = false; console.log('FAIL notation repair warning', fix.pgn, fix.warnings); }
+// Castling written as digits.
+const c00 = NT.toPGN('1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. 00 Nf6', E);
+if (!/4\. O-O Nf6 \*$/.test(c00.pgn)) { ok = false; console.log('FAIL notation 00 castling', c00.pgn); }
 const rxr = NT.descriptiveMoves(E.fromFEN('3r3k/8/8/8/8/8/8/3R3K w - - 0 1'), 'RXR', E);
 if (rxr.length !== 1 || E.squareName(rxr[0].from) !== 'd1' || E.squareName(rxr[0].to) !== 'd8') {
   ok = false; console.log('FAIL descriptive RXR', rxr);

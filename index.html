@@ -1484,7 +1484,7 @@
     let mt = '';
     sans.forEach((sn, i) => { if (i % 2 === 0) mt += (i / 2 + 1) + '. '; mt += sn + ' '; });
     return Object.entries(tags).map(([k, v]) => `[${k} "${String(v).replace(/"/g, '')}"]`).join('\n')
-      + '\n\n' + mt.trim() + (tags.Result !== '*' ? ' ' + tags.Result : '');
+      + '\n\n' + mt.trim() + ' ' + tags.Result;
   }
   $('savePgn').onclick = () => {
     const pgn = buildPGN();
@@ -1496,8 +1496,10 @@
   };
 
   // ---- Import: My games (IndexedDB, browser-only) ----
-  function saveGame(pgn, parsed, source) {
+  async function saveGame(pgn, parsed, source) {
     const tags = parsed.tags;
+    // Re-reviewing the same game (twice, or after loading it from the list) doesn't save a copy.
+    try { if ((await GameDB.list()).some((r) => r.pgn.trim() === pgn.trim())) return; } catch (e) { return; }
     GameDB.save({
       id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       savedAt: Date.now(),

@@ -27,12 +27,12 @@
   // Letters that survive: files a-h, pieces KQRBN plus German S/T/L/D, castle O.
   function cleanToken(t) {
     let x = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\$/g, '3').replace(/&/g, 'Q')
-      .replace(/[–—−]/g, '-').replace(/[.,;:!?+#()"'*§×¢€£¥¤]/g, '').replace(/ep$/i, '')
-      .replace(/^\d+(?=[a-h0-9koq])/i, '').replace(/^l(?=[a-h0-9])|^i(?=[a-h0-9])/, '');
+      .replace(/[–—−]/g, '-').replace(/[.,;:!?+#()"'*§×¢€£¥¤]/g, '').replace(/ep$/i, '');
+    // Castling misread as digits/letters ("09", "00", "000"), before digits are stripped as move numbers.
+    if (/^[o0][09o]$/i.test(x)) return { text: 'O-O', weak: false };
+    if (/^[o0]{3}$/i.test(x)) return { text: 'O-O-O', weak: false };
+    x = x.replace(/^\d+(?=[a-h0-9koq])/i, '').replace(/^l(?=[a-h0-9])|^i(?=[a-h0-9])/, '');
     if (!x || RESULTS.test(t) || /^\d+$/.test(x) || SKIPPABLE.test(x)) return null;
-    // Castling misread as digits/letters ("09", "00", "000").
-    if (/^[o0][09o]$/i.test(x)) x = 'OO';
-    else if (/^[o0]{3}$/i.test(x)) x = 'OOO';
     if (/^[2-9?]-[0-9?]$|^[0-9?]-[2-9?]$/.test(x)) return null; // misread result ("7-0"), never castling
     // Descriptive pawn moves carry a leading P ("PQ4", "PKN3", "PXP") — no
     // algebraic SAN does, so admit exactly that shape, not every P-word.
@@ -154,28 +154,41 @@
 
   // A token only descriptive notation can produce (NKB3, PKB4, RxR, PXp ...).
   function looksDescriptive(token) {
-    return /^(?:[KQ][RBN][1-8]|[PKQRBN][KQ][RBN][1-8]|[KQRBN]X[KQRBNP]|PX[KQRBNP])$/i.test(token);
+    return /^[KQkq][RBN][1-8]$/.test(token) || /^(?:[PKQRBN][KQ][RBN][1-8]|[KQRBN]X[KQRBNP]|PX[KQRBNP])$/i.test(token);
   }
 
+  // The legal move the token stands for, or null. matchMove.how tells how it
+  // was read: 'exact', 'desc' (descriptive notation) or 'repaired' (fuzzy).
   function matchMove(s, token, E, preferDesc) {
-    const readings = [...new Set([clean(token).toLowerCase(), clean(germanize(token)).toLowerCase()])];
+    const done = (m, how) => { matchMove.how = how; return m; };
+    const exact = [...new Set([clean(token), clean(germanize(token))])];
+    const readings = [...new Set(exact.map((w) => w.toLowerCase()))];
     const descriptive = () => {
       const ms = descriptiveMoves(s, token, E);
       return ms.length === 1 ? ms[0] : null; // two readings of one token = ambiguous
     };
+    const moves = E.legalMoves(s).map((m) => ({ m, san: clean(E.san(s, m)) }));
+    // SAN is unique case-sensitively: "Bxc5" is the bishop, "bxc5" the pawn.
+    for (const w of exact) {
+      const hit = moves.find((o) => o.san === w);
+      if (hit) return done(hit.m, 'exact');
+    }
     if (preferDesc) {
       const d = descriptive();
-      if (d) return d;
+      if (d) return done(d, 'desc');
     }
-    const cands = E.legalMoves(s).map((m) => ({ m, sn: clean(E.san(s, m)).toLowerCase() }));
+    // Case lost to OCR ("NF3", "BXC5"): accept only if a single move fits.
+    const cands = moves.map((o) => ({ m: o.m, sn: o.san.toLowerCase() }));
     for (const w of readings) {
-      const hit = cands.find((o) => o.sn === w);
-      if (hit) return hit.m; // SAN disambiguates, so an exact match is unique
+      const hits = cands.filter((o) => o.sn === w);
+      // Only b/B is ambiguous (pawn file or bishop): flipping it is a repair worth reporting.
+      if (hits.length === 1) return done(hits[0].m, /^b/i.test(w) && !exact.includes(clean(E.san(s, hits[0].m))) ? 'repaired' : 'exact');
+      if (hits.length > 1) return null;
     }
     // No exact match: OCR junk inside a move often makes it look descriptive
     // ("NRh3" for Nh3), so try the descriptive reading before fuzzy repair.
     const d = descriptive();
-    if (d) return d;
+    if (d) return done(d, preferDesc ? 'desc' : 'repaired');
     let best = null, bestCost = 3, ties = 0;
     for (const { m, sn } of cands) {
       let c = null;
@@ -187,7 +200,7 @@
       if (c < bestCost) { best = m; bestCost = c; ties = 1; }
       else if (c === bestCost) ties++;
     }
-    return ties === 1 ? best : null;
+    return ties === 1 ? done(best, 'repaired') : null;
   }
 
   // OCR sometimes glues two half-moves together ("e4e5"). Try every split point.
@@ -212,7 +225,8 @@
     for (const raw of String(text).split(/\s+/)) {
       if (!raw) continue;
       if (RESULTS.test(raw)) { result = raw.replace('½-½', '1/2-1/2'); continue; }
-      if (/^(\d+[.)]*|[-–—_=•]+)$/i.test(raw)) continue; // move numbers, stray punctuation
+      // Move numbers and stray punctuation ("00"/"000" are castling, not numbers).
+      if (/^(\d+[.)]*|[-–—_=•]+)$/i.test(raw) && !/^0{2,3}$|^09$/.test(raw)) continue;
       toks.push(raw);
     }
 
@@ -234,7 +248,10 @@
       if (!c) { warnings.push(`Skipped "${raw}"`); continue; }
       let m = matchMove(s, c.text, E, preferDesc);
       if (!m && c.weak) { warnings.push(`Skipped "${raw}"`); continue; } // "No", "B." junk
-      if (m) { sans.push(E.san(s, m)); s = E.makeMove(s, m); continue; }
+      if (m) {
+        if (matchMove.how === 'repaired') warnings.push(`Read "${raw}" as ${E.san(s, m)}`);
+        sans.push(E.san(s, m)); s = E.makeMove(s, m); continue;
+      }
       const split = trySplit(s, c.text, E, preferDesc);
       if (split) {
         sans.push(E.san(s, split[0]), E.san(split[1], split[2]));
@@ -261,7 +278,7 @@
       mt += sn + ' ';
     });
     const pgn = Object.entries(tags).map(([k, v]) => `[${k} "${v}"]`).join('\n')
-      + '\n\n' + mt.trim() + (result ? ' ' + result : '');
+      + '\n\n' + mt.trim() + ' ' + tags.Result;
     return { pgn, warnings };
   }
 
