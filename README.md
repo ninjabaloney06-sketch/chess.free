@@ -66,7 +66,7 @@ Measured against human-style numbers (each level playing itself from 8 openings,
 | 2200 | 32 | 1.2 |
 | 2400 | 22.5 | 0.35 |
 
-Strong club players lose roughly 40–50 centipawns a move, so 1200–1800 play alike, at about that strength, and so do 2000 and 2200. Only the 1000 level, through its random moves, plays like a beginner. Adding random moves to 1200–1600 as well would spread them out; for now every level above 1000 is pure Stockfish.
+As a rough rule of thumb (not a measured human baseline), 40–50 centipawns a move is strong-club play, so 1200–1800 play alike, at about that strength, and so do 2000 and 2200. Only the 1000 level, through its random moves, plays like a beginner. Adding random moves to 1200–1600 as well would spread them out; for now every level above 1000 is pure Stockfish.
 
 | Level | Setting | Measured rating | Games |
 |---|---|---|---|
