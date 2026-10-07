@@ -51,7 +51,22 @@ A complete chess game on a stone board with hand-drawn black and white pieces.
 
 ## Bot ratings
 
-All 8 levels are Stockfish 19 Lite with its strength limiter (`UCI_LimitStrength` / `UCI_Elo`) and a per-level move time, so weak levels play like weak humans — the previous built-in engine's quiescence search meant it never hung pieces the way beginners do. Stockfish's `UCI_Elo` cannot go below 1320, so the 1000 level additionally plays a uniformly random legal move 12% of the time (and 1000–1200 sit at the floor). Each level's rating is measured by playing matches against a reference Stockfish with `UCI_LimitStrength`. The games start from 12 balanced openings, and each opening is played with both colors. The ratings are on Stockfish's Elo scale, which is calibrated against computer engines. They are rough guides to human ratings, not exact equivalents.
+All 8 levels are Stockfish 19 Lite with its strength limiter (`UCI_LimitStrength` / `UCI_Elo`) and a per-level move time. Stockfish's `UCI_Elo` cannot go below 1320, so the 1000 level additionally plays a uniformly random legal move 12% of the time (and 1000–1200 sit at the floor). Each level's rating is measured by playing matches against a reference Stockfish with `UCI_LimitStrength`. The games start from 12 balanced openings, and each opening is played with both colors. The ratings are on Stockfish's Elo scale, which is calibrated against computer engines. They are rough guides to human ratings, not exact equivalents, and measuring against Stockfish's own limiter only shows the levels are consistent with that scale.
+
+Measured against human-style numbers (each level playing itself from 8 openings, 20 sides, every move analysed by full-strength Stockfish), the limiter barely changes how a level plays below about 1800:
+
+| Level | Average centipawn loss | Blunders per game |
+|---|---|---|
+| 1000 | 92 | 2.9 |
+| 1200 | 52 | 1.6 |
+| 1400 | 48 | 1.8 |
+| 1600 | 45 | 2.6 |
+| 1800 | 42 | 1.7 |
+| 2000 | 31 | 1.1 |
+| 2200 | 32 | 1.2 |
+| 2400 | 22.5 | 0.35 |
+
+Strong club players lose roughly 40–50 centipawns a move, so 1200–1800 play alike, at about that strength, and so do 2000 and 2200. Only the 1000 level, through its random moves, plays like a beginner. Adding random moves to 1200–1600 as well would spread them out; for now every level above 1000 is pure Stockfish.
 
 | Level | Setting | Measured rating | Games |
 |---|---|---|---|
@@ -65,7 +80,7 @@ All 8 levels are Stockfish 19 Lite with its strength limiter (`UCI_LimitStrength
 | 2400 | Stockfish 19 Lite, `UCI_Elo` 2540, 0.5 s per move | ≈ 2400 | 40 vs SF 2400 (JS build; native SF measured ≈ 2410) |
 | Review engine | Stockfish 19 Lite, full strength, 0.5 s per position | ≈ 3400 (26 wins, 3 draws, 1 loss) | 30 vs SF 3000 at 1 s per move |
 
-The eight play levels were measured against the same JS build acting as the reference (`node calibrate.js '{"engine":"sfjs",...}' <refElo> 40 stockfish/stockfish-19-lite-single.js`), games from 12 balanced openings with colors reversed. Each level is within ±150 of its label. Stockfish Lite's own `UCI_Elo` reads about 90–140 low at the top end: set to 2540 it plays at ≈ 2400, so the 2400 level uses 2540.
+The eight play levels were measured against the same JS build acting as the reference (`node calibrate.js '{"engine":"sfjs",...}' <refElo> 40 stockfish/stockfish-19-lite-single.js`), games from 12 balanced openings with colors reversed. Each level is within ±150 of its label on that scale. Stockfish Lite's own `UCI_Elo` reads about 90–140 low at the top end: set to 2540 it plays at ≈ 2400, so the 2400 level uses 2540.
 
 ## Matching chess.com
 
