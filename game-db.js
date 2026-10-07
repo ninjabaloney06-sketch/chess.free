@@ -1,6 +1,6 @@
 // Saved games. A small IndexedDB store — everything stays in the browser, no
-// server, no account. One record per imported game: { id, savedAt, pgn, white,
-// black, result, moves, source }.
+// server, no account. One record per saved or imported game: { id, savedAt,
+// pgn, name (up to 25 characters), white, black, result, moves, source }.
 (function () {
   'use strict';
   // 'stone-chess' is taken by the deep-review engine cache, so games live in

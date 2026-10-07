@@ -15,7 +15,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces.
 - Player bars above and below the board with each side's captured pieces and a +N showing who is ahead in material (pawn 1, knight and bishop 3, rook 5, queen 9)
 - A layout modeled on chess.com: dark theme, the board sized to the window, player bars with avatars, and one side panel as tall as the board with Play, Review and Import tabs that scroll inside it
 - **Import a game:** open the Import tab, paste a PGN from chess.com or lichess and click *Review this game*. Player names and ratings come from the PGN; comments, variations and annotations in it are skipped
-- **My games:** every imported game is saved in the browser (IndexedDB) and listed under My games in the Import tab — review it again, copy its PGN, or delete it. The games never leave the browser
+- **My games:** every imported game is saved in the browser (IndexedDB) and listed under My games in the Import tab. The save icon in Game Review stores the current game there too (no download), under a name of up to 25 characters. Each entry shows its name, date and time; sort newest or oldest first, review it, or delete it (click the bin twice). The games never leave the browser
 - **Game review** powered by Stockfish 19 Lite at full strength (300k nodes per position, about 0.6 s on a laptop). A fixed node count instead of a time limit means the same game always gets the same review. Tuned to match chess.com's Game Review (see *Matching chess.com* below):
   - A summary first, like chess.com: a coach comment naming the turning point, the evaluation graph, each player's accuracy, move-label counts and game rating. *Start Review* then steps through the moves with a comment on each
   - Eval bar and evaluation graph
