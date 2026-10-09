@@ -12,6 +12,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces.
 - Move by dragging (the piece follows your cursor) or by clicking a piece and then a square
 - Draw on the board like chess.com or lichess: hold Shift (or use the right mouse button) and click a square to mark it, or drag to draw an arrow. Do it again to remove one; a normal click or the next move clears them all
 - Resign (click twice to confirm), new game, undo, and board flip
+- Look back during a game: the ← → arrow keys or a click in the move list show earlier positions; the next move, or a click on the board, returns to the live position
 - Player bars above and below the board with each side's captured pieces and a +N showing who is ahead in material (pawn 1, knight and bishop 3, rook 5, queen 9)
 - A layout modeled on chess.com: dark theme, the board sized to the window, player bars with avatars, and one side panel as tall as the board with Play, Review and Import tabs that scroll inside it
 - **Import a game:** open the Import tab, paste a PGN from chess.com or lichess and click *Review this game*. Player names and ratings come from the PGN; comments, variations and annotations in it are skipped
