@@ -784,6 +784,7 @@
   }
   let game, history, sans, ucis, selected, flipped = false, thinking = false, endShown = false, pendingPromo = null, resigned = null;
   let review = null;
+  let liveView = null; // index into positions() while stepping back through a game in play; null = the live position
   let tab = 'play';
   function setTab(t) { tab = t; render(); }
   let imported = null; // PGN header tags of an imported game
@@ -795,14 +796,14 @@
     if (resigned) return { over: true, result: 'resign', winner: other(resigned), check: false };
     return E.status(game);
   }
-  const humanTurn = () => !review && !thinking && game.turn !== aiColor() && !gameStatus().over;
+  const humanTurn = () => !review && liveView === null && !thinking && game.turn !== aiColor() && !gameStatus().over;
 
   function newGame() {
     cancelEngine();
     thinking = false;
     game = E.newGame();
     history = []; sans = []; ucis = [];
-    selected = null; endShown = false; resigned = null; review = null; imported = null; savedId = null;
+    selected = null; endShown = false; resigned = null; review = null; liveView = null; imported = null; savedId = null;
     $('saveBar').hidden = true;
     closeModal('endModal'); closeModal('promoModal');
     myColor = side === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : side;
@@ -816,7 +817,7 @@
     ucis.push(uciOf(m));
     history.push(game);
     game = E.makeMove(game, m);
-    selected = null;
+    selected = null; liveView = null;
     render();
     maybeAI();
   }
@@ -843,7 +844,7 @@
     thinking = false;
     resigned = null;
     do { game = history.pop(); sans.pop(); ucis.pop(); } while (history.length && game.turn === aiColor());
-    selected = null; endShown = false;
+    selected = null; endShown = false; liveView = null;
     render();
     maybeAI();
   }
@@ -919,6 +920,7 @@
     }
     if (e.button !== 0) return;
     const cleared = clearMarks();
+    if (!review && liveView !== null) return liveGoto(sans.length);
     if (!canMove()) { if (cleared) render(); return; }
     const st = boardState(), p = st.board[i];
     if (selected !== null && legalTo(selected, i).length) { play(legalTo(selected, i)); return; }
@@ -1062,7 +1064,8 @@
     thinking = false; selected = null;
     closeModal('endModal');
     const pos = positions();
-    const cur = review ? review.cur : { line: -1, k: pos.length - 1 };
+    const cur = review ? review.cur : { line: -1, k: liveView ?? pos.length - 1 };
+    liveView = null;
     const ecoPlies = imported ? OB.ecoUrlPlies(imported.ECOUrl, sans) : 0;
     review = { cur: { line: -1, k: cur.line < 0 ? cur.k : pos.length - 1 }, analysis: new Array(pos.length), cls: [], done: 0, lines: [], deep, loading: deep,
       book: bookPlies(pos.slice(1), ecoPlies), view: review ? review.view : 'summary' };
@@ -1166,6 +1169,11 @@
     if (line < 0) k = Math.max(0, Math.min(positions().length - 1, k));
     else k = Math.max(1, Math.min(review.lines[line].moves.length, k));
     review.cur = { line, k }; review.view = 'steps'; selected = null; render();
+  }
+  // Step through the moves of a game in play (k = moves shown); the live position is k = sans.length
+  function liveGoto(k) {
+    k = Math.max(0, Math.min(sans.length, k));
+    liveView = k === sans.length ? null : k; selected = null; render();
   }
   function step(d) {
     const c = review.cur;
@@ -1338,7 +1346,7 @@
     document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'pane-' + tab));
     const pos = positions();
     const node = review ? curNode() : null;
-    const view = review ? node.state : game;
+    const view = review ? node.state : liveView !== null ? pos[liveView] : game;
     const legal = selected !== null && canMove() ? E.legalMoves(view).filter((m) => m.from === selected) : [];
     const last = view.lastMove;
     const kingInCheck = E.inCheck(view) ? view.board.findIndex((p) => p && p.t === 'k' && p.c === view.turn) : -1;
@@ -1396,7 +1404,7 @@
 
     // Captured pieces (along the viewed line)
     const caps = { w: [], b: [] };
-    const path = node ? node.path : pos;
+    const path = node ? node.path : pos.slice(0, (liveView ?? pos.length - 1) + 1);
     for (let k = 1; k < path.length; k++) if (path[k].captured) caps[path[k - 1].turn].push(path[k].captured);
     const order = 'qrbnp';
     // Material lead from the pieces on the board, so promotions count too
@@ -1415,7 +1423,7 @@
 
     // Move list, with review variations under the move they branch from
     const mvEl = $('moves');
-    const cur = review ? (review.cur.line < 0 ? review.cur.k - 1 : -2) : sans.length - 1;
+    const cur = review ? (review.cur.line < 0 ? review.cur.k - 1 : -2) : (liveView ?? sans.length) - 1;
     const cell = (k) => {
       if (k >= sans.length) return '<span></span>';
       const icon = review && review.cls[k] ? clsIcon(review.cls[k].c) : '';
@@ -1645,7 +1653,7 @@
   $('navNext').onclick = () => step(1);
   $('navLast').onclick = () => goto(-1, positions().length - 1);
   const onMovesClick = (e) => {
-    if (!review) return;
+    if (!review) { const el = e.target.closest('.mv'); if (el) liveGoto(+el.dataset.k + 1); return; }
     const del = e.target.closest('.vdel');
     if (del) return deleteLine(+del.dataset.del);
     const el = e.target.closest('.mv');
@@ -1661,9 +1669,11 @@
     goto(-1, Math.round(((e.clientX - r.left) / r.width) * (positions().length - 1)));
   });
   document.addEventListener('keydown', (e) => {
-    if (!review || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
-    if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
-    if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
+    if (['SELECT', 'TEXTAREA', 'INPUT'].includes(e.target.tagName)) return;
+    const d = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+    if (!d) return;
+    if (review) step(d); else liveGoto((liveView ?? sans.length) + d);
+    e.preventDefault();
   });
 
   newGame();
