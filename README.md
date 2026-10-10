@@ -7,7 +7,7 @@ A complete chess game on a stone board with hand-drawn black and white pieces.
 ## Features
 
 - All the rules: castling, en passant, promotion (you pick the piece), check, checkmate, stalemate, the 50-move rule, threefold repetition, and insufficient material
-- Computer opponent at eight ratings: 1000 to 2200 use the built-in engine, and 2400 uses Stockfish's own strength limiter. All are checked against Stockfish (see below).
+- Computer opponent at eight ratings, 1000 to 2400: all eight are Stockfish 19 Lite with its own strength limiter (`UCI_Elo`); the 1000 level adds 12% random moves because `UCI_Elo` stops at 1320 (see below).
 - Two players on one device
 - Move by dragging (the piece follows your cursor) or by clicking a piece and then a square
 - Draw on the board like chess.com or lichess: hold Shift (or use the right mouse button) and click a square to mark it, or drag to draw an arrow. Do it again to remove one; a normal click or the next move clears them all
