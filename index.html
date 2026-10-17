@@ -659,6 +659,8 @@
       if (this.job || !this.queue.length) return;
       const j = this.job = this.queue.shift();
       j.lines = {};
+      // A review run starts from a cleared hash, so its results don't depend on what the worker searched before.
+      if (j.fresh) this.send('ucinewgame');
       this.send(`setoption name UCI_LimitStrength value ${j.elo ? 'true' : 'false'}`);
       if (j.elo) this.send(`setoption name UCI_Elo value ${j.elo}`);
       this.send(`setoption name MultiPV value ${j.multipv || 1}`);
@@ -694,10 +696,53 @@
     }
   }
 
+  // Review spreads its positions over several single-threaded Stockfish workers, one per CPU core.
+  // Separate workers need no SharedArrayBuffer, so this works without cross-origin isolation and
+  // from file://. Extra workers start in the background; jobs go to whichever worker is free.
+  class EnginePool {
+    constructor(first, make, size) { this.engines = [first]; this.live = [first]; this.make = make; this.size = size; this.queue = []; this.idle = [first]; }
+    load() {
+      return this.engines[0].load().then((ok) => {
+        if (ok && this.engines.length < this.size) {
+          for (let i = 1; i < this.size; i++) {
+            const e = this.make();
+            this.engines.push(e);
+            e.load().then((up) => { if (up) { this.live.push(e); this.idle.push(e); this.next(); } });
+          }
+        }
+        return ok;
+      });
+    }
+    // An urgent job (a variation played during review) goes to the first worker right after its current
+    // search instead of waiting for a whole run to finish.
+    request(job, urgent) { return urgent ? this.engines[0].request(job, true) : this.chain([job])[0]; }
+    // Jobs in a chain run in order on one worker, so each search starts from the previous one's hash.
+    chain(jobs) {
+      const ps = jobs.map((j) => new Promise((resolve) => { j.resolve = resolve; }));
+      this.queue.push(jobs);
+      this.next();
+      return ps;
+    }
+    next() {
+      while (this.idle.length && this.queue.length) {
+        const e = this.idle.shift(), c = this.queue.shift();
+        Promise.all(c.map((j) => e.request({ ...j, resolve: null }).then(j.resolve)))
+          .then(() => { this.idle.push(e); this.next(); });
+      }
+    }
+    cancel() {
+      const q = this.queue; this.queue = [];
+      q.flat().forEach((j) => j.resolve(null));
+      this.live.forEach((e) => e.cancel());
+    }
+  }
+
   const builtin = new BuiltinEngine();
   const http = location.protocol.startsWith('http');
-  const stockfish = new StockfishEngine('Stockfish 19 Lite',
-    () => (http ? [{ direct: 'stockfish/stockfish-19-lite-single.js' }, {}] : [{}]), 20000);
+  const liteSources = () => (http ? [{ direct: 'stockfish/stockfish-19-lite-single.js' }, {}] : [{}]);
+  const stockfish = new StockfishEngine('Stockfish 19 Lite', liteSources, 20000);
+  const REVIEW_WORKERS = Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4));
+  const reviewPool = new EnginePool(stockfish, () => new StockfishEngine('Stockfish 19 Lite', liteSources, 20000), REVIEW_WORKERS);
   const deepStockfish = new StockfishEngine('Stockfish 19',
     () => (http ? [{ js: `stockfish/${FULL_SF}.js`, wasm: `stockfish/${FULL_SF}.wasm`, probe: true, hash: 128 }] : [])
       .concat([{ cache: FULL_SF + '@19.0.0', js: FULL_SF_CDN + FULL_SF + '.js', wasm: FULL_SF_CDN + FULL_SF + '.wasm', hash: 128 }]), 15 * 60000);
@@ -706,10 +751,10 @@
   idb('readonly', (st) => st.count(FULL_SF + '@19.0.0')).then((n) => { deepCached = n > 0; }, () => {});
   let gen = 0, sfOk = null;
   stockfish.load().then((ok) => { sfOk = ok; render(); });
-  function cancelEngine() { gen++; builtin.cancel(); if (sfOk) stockfish.cancel(); if (deepStockfish.w) deepStockfish.cancel(); }
+  function cancelEngine() { gen++; builtin.cancel(); if (sfOk) reviewPool.cancel(); if (deepStockfish.w) deepStockfish.cancel(); }
 
   // Review searches a fixed number of nodes per position rather than a fixed time, so the same game
-  // always gets the same review, whatever the device or its load (about 0.6 s per position on a laptop).
+  // always gets the same review, whatever the device's speed or load (about 0.6 s per position on a laptop).
   const REVIEW_NODES = 300000; // Stockfish 19 Lite (built-in fallback: 900 ms)
   const DEEP_REVIEW_NODES = 1000000; // full Stockfish 19 in deep review
   // Every level is Stockfish Lite behind its own UCI_Elo and move time: its limiter plays human-like
@@ -750,7 +795,7 @@
     const g = gen;
     let r = null;
     if (review && review.deep && await deepStockfish.load()) r = await deepStockfish.request({ moves, nodes: DEEP_REVIEW_NODES, multipv: 2 }, urgent);
-    else if (await stockfish.load()) r = await stockfish.request({ moves, nodes: REVIEW_NODES, multipv: 2 }, urgent);
+    else if (await reviewPool.load()) r = await reviewPool.request({ moves, nodes: REVIEW_NODES, multipv: 2 }, urgent);
     else {
       const t = await builtin.think({ fen: E.START_FEN, moves, timeMs: 900, window: 250 });
       if (t) r = { best: t.best, score: t.bestScore, second: t.lines[1] ? t.lines[1].score : null, pv: [t.best] };
@@ -1055,6 +1100,24 @@
     return analyze(moves, urgent);
   }
 
+  // The review splits the game into one run of consecutive positions per worker. Each run starts from
+  // a cleared hash, warmed on the REVIEW_WARMUP positions before it, then searches its positions in
+  // order like a single worker would, so the same game always gets the same review on a given
+  // number of cores.
+  const REVIEW_WARMUP = 2;
+  function poolAnalyses(pos) {
+    const g = gen, n = pos.length, size = Math.ceil(n / reviewPool.size), out = [];
+    for (let s = 0; s < n; s += size) {
+      const chain = [];
+      for (let i = Math.max(0, s - REVIEW_WARMUP); i < Math.min(n, s + size); i++) {
+        if (E.status(pos[i]).over) continue;
+        chain.push({ i, moves: ucis.slice(0, i), nodes: REVIEW_NODES, multipv: 2, fresh: !chain.length });
+      }
+      reviewPool.chain(chain).forEach((p, k) => { if (chain[k].i >= s) out[chain[k].i] = p.then((r) => (g === gen ? r : null)); });
+    }
+    return pos.map((p, i) => out[i] || analysisFor(p, ucis.slice(0, i), false));
+  }
+
   // Deep review re-analyzes the game with the full Stockfish 19, downloading it first if needed.
   let deepError = '';
   async function startReview(deep) {
@@ -1084,10 +1147,20 @@
       }
       render();
     }
+    // A finished review is kept in IndexedDB, keyed by everything that shapes its result, so reviewing
+    // the same game again shows the same analysis at once.
+    const key = deep ? null : `review:${REVIEW_NODES}:${reviewPool.size}:${REVIEW_WARMUP}:${ucis.join(' ')}`;
+    let cached = null;
+    if (key) try { cached = await idb('readonly', (st) => st.get(key)); } catch (e) { /* no storage */ }
+    if (review !== myReview) return;
+    const pooled = !cached && !review.deep && await reviewPool.load();
+    // Queue every position at once so the engine workers run in parallel, then take the results in order.
+    const jobs = cached && cached.length === pos.length ? cached.map((a) => Promise.resolve(a))
+      : pooled ? poolAnalyses(pos) : pos.map((p, i) => analysisFor(p, ucis.slice(0, i), false));
     for (let i = 0; i < pos.length; i++) {
       if (review !== myReview) return;
       if (!review.analysis[i]) {
-        const a = await analysisFor(pos[i], ucis.slice(0, i), false);
+        const a = await jobs[i];
         if (!a || review !== myReview) return;
         if (!review.analysis[i]) review.analysis[i] = a;
       }
@@ -1097,9 +1170,12 @@
         review.cls[i - 1] = classifyMove(pos[i - 1], pos[i], review.analysis[i - 1], review.analysis[i], ucis[i - 1],
           i - 1 < review.book, prev ? prev.loss : null);
       }
-      render();
+      // Results can land many at once; one render per frame keeps the page responsive.
+      if (!renderQueued) { renderQueued = true; requestAnimationFrame(() => { renderQueued = false; render(); }); }
     }
+    if (pooled && key) Promise.all(jobs).then((all) => { if (all.every(Boolean)) idb('readwrite', (st) => st.put(all, key)).catch(() => {}); });
   }
+  let renderQueued = false;
   function exitReview() { cancelEngine(); review = null; selected = null; tab = 'play'; render(); maybeAI(); }
 
   // The position being viewed in review: on the main line, or k moves into variation `line`.
@@ -1446,10 +1522,14 @@
       if (review) review.lines.forEach((L, li) => { if (L.start === k || L.start === k + 1) html += varRow(L, li); });
     }
     if (review) review.lines.forEach((L, li) => { if (L.start >= sans.length + (sans.length % 2)) html += varRow(L, li); });
+    // Scroll the current move into view only when it changes, so re-renders while the review is
+    // still analyzing don't pull the list away from where the user scrolled.
+    const curKey = review ? `${review.cur.line}:${review.cur.k}` : String(cur);
     for (const el of [mvEl, $('rvMoves')]) {
       el.innerHTML = html;
       const curEl = el.querySelector('.mv.cur'), box = el.closest('.pane-body');
-      if (curEl && box && box.offsetParent) {
+      if (curEl && box && box.offsetParent && el.dataset.cur !== curKey) {
+        el.dataset.cur = curKey;
         const r = curEl.getBoundingClientRect(), br = box.getBoundingClientRect();
         if (r.top < br.top + 8 || r.bottom > br.bottom - 8) box.scrollTop += r.top - br.top - box.clientHeight / 2;
       }
