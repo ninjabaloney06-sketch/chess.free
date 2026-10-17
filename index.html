@@ -1105,7 +1105,7 @@
   // order like a single worker would, so the same game always gets the same review on a given
   // number of cores.
   const REVIEW_WARMUP = 2;
-  function poolAnalyses(pos) {
+  function poolAnalyses(pos, onSearch) {
     const g = gen, n = pos.length, size = Math.ceil(n / reviewPool.size), out = [];
     for (let s = 0; s < n; s += size) {
       const chain = [];
@@ -1113,7 +1113,11 @@
         if (E.status(pos[i]).over) continue;
         chain.push({ i, moves: ucis.slice(0, i), nodes: REVIEW_NODES, multipv: 2, fresh: !chain.length });
       }
-      reviewPool.chain(chain).forEach((p, k) => { if (chain[k].i >= s) out[chain[k].i] = p.then((r) => (g === gen ? r : null)); });
+      onSearch(0, chain.length);
+      reviewPool.chain(chain).forEach((p, k) => {
+        p.then((r) => { if (r && g === gen) onSearch(1, 0); });
+        if (chain[k].i >= s) out[chain[k].i] = p.then((r) => (g === gen ? r : null));
+      });
     }
     return pos.map((p, i) => out[i] || analysisFor(p, ucis.slice(0, i), false));
   }
@@ -1130,7 +1134,7 @@
     const cur = review ? review.cur : { line: -1, k: liveView ?? pos.length - 1 };
     liveView = null;
     const ecoPlies = imported ? OB.ecoUrlPlies(imported.ECOUrl, sans) : 0;
-    review = { cur: { line: -1, k: cur.line < 0 ? cur.k : pos.length - 1 }, analysis: new Array(pos.length), cls: [], done: 0, finished: 0, lines: [], deep, loading: deep,
+    review = { cur: { line: -1, k: cur.line < 0 ? cur.k : pos.length - 1 }, analysis: new Array(pos.length), cls: [], done: 0, searches: 0, searchTotal: 0, lines: [], deep, loading: deep,
       book: bookPlies(pos.slice(1), ecoPlies), view: review ? review.view : 'summary' };
     const myReview = review;
     deepError = '';
@@ -1156,9 +1160,12 @@
     const pooled = !cached && !review.deep && await reviewPool.load();
     // Queue every position at once so the engine workers run in parallel, then take the results in order.
     const jobs = cached && cached.length === pos.length ? cached.map((a) => Promise.resolve(a))
-      : pooled ? poolAnalyses(pos) : pos.map((p, i) => analysisFor(p, ucis.slice(0, i), false));
-    // The workers finish positions out of order, so the progress bar counts every finished one, not just the in-order prefix.
-    jobs.forEach((j) => j.then((a) => { if (a && review === myReview) { review.finished++; queueRender(); } }));
+      : pooled ? poolAnalyses(pos, (done, total) => {
+        // Progress counts every finished search, warm-up ones included, in whatever order the workers finish them.
+        if (review !== myReview) return;
+        review.searches += done; review.searchTotal += total;
+        if (done) queueRender();
+      }) : pos.map((p, i) => analysisFor(p, ucis.slice(0, i), false));
     for (let i = 0; i < pos.length; i++) {
       if (review !== myReview) return;
       if (!review.analysis[i]) {
@@ -1314,15 +1321,15 @@
     $('rvSummary').hidden = steps; $('rvSteps').hidden = !steps;
     $('footSummary').hidden = steps; $('footSteps').hidden = !steps;
     $('rvBack').style.visibility = steps ? 'visible' : 'hidden';
-    const finished = Math.max(review.done, review.finished);
-    $('reviewProgress').style.width = (100 * finished / n) + '%';
+    const frac = review.done >= n ? 1 : review.searchTotal ? Math.min(review.searches / review.searchTotal, (n - 1) / n) : review.done / n;
+    $('reviewProgress').style.width = (100 * frac) + '%';
     const p = deepStockfish.progress;
     $('reviewProgressText').textContent = review.loading
       ? (p && p.total ? `Downloading full Stockfish… ${Math.floor(100 * p.percent)}% of ${Math.round(p.total / 1e6)} MB${p.etaText ? ', ' + p.etaText + ' left' : ''}`
         : p ? `Downloading full Stockfish… ${Math.round(p.loaded / 1e6)} MB`
         : 'Starting full Stockfish…')
       : (deepError ? deepError + ' ' : '') + (review.done < n
-        ? `Analyzing… ${finished}/${n} positions`
+        ? `Analyzing… ${Math.floor(100 * frac)}%`
         : `Analyzed ${n - 1} moves.`);
     $('deepReview').disabled = review.deep;
     $('deepReview').textContent = review.deep ? 'Deep review done' : deepCached ? 'Deep review' : 'Deep review (≈99 MB download)';
